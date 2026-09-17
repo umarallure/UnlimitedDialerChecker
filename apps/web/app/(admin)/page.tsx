@@ -1,7 +1,17 @@
+import { Card, Metric, PageHeader, SectionLabel, StatusPill } from "@/components/ui";
 import { requireAdmin } from "@/lib/dal";
+import { LIFECYCLE_TONE } from "@/lib/status";
 import { createClient } from "@/lib/supabase/server";
 
-const LIFECYCLES = ["NEW", "WARMING", "ACTIVE", "COOLING", "RETIRED"] as const;
+const LIFECYCLES = [
+  { key: "NEW", note: "Aging 7 days before first call" },
+  { key: "WARMING", note: "Ramping 20 → 40 → 60 calls/day" },
+  { key: "ACTIVE", note: "In rotation, 60/day cap" },
+  { key: "COOLING", note: "Resting 7–14 days" },
+  { key: "RETIRED", note: "Out of outbound use" },
+] as const;
+
+type LifecycleKey = (typeof LIFECYCLES)[number]["key"];
 
 export default async function OverviewPage() {
   await requireAdmin();
@@ -15,56 +25,75 @@ export default async function OverviewPage() {
     supabase.from("agents_live").select("status"),
   ]);
 
-  const byLifecycle = Object.fromEntries(LIFECYCLES.map((l) => [l, 0])) as Record<(typeof LIFECYCLES)[number], number>;
-  for (const row of dids.data ?? []) byLifecycle[row.lifecycle as (typeof LIFECYCLES)[number]]++;
+  const byLifecycle = Object.fromEntries(LIFECYCLES.map((l) => [l.key, 0])) as Record<LifecycleKey, number>;
+  for (const row of dids.data ?? []) byLifecycle[row.lifecycle as LifecycleKey]++;
 
   const agentRows = agents.data ?? [];
   const readyAgents = agentRows.filter((a) => a.status === "READY").length;
+  const inCall = agentRows.filter((a) => a.status === "INCALL").length;
+  const enforcing = policy.data?.enforcement_mode === "enforce";
+  const openAlerts = alerts.count ?? 0;
+  const dialerRows = dialers.data ?? [];
 
   return (
-    <div className="flex flex-col gap-8">
-      <section className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">Overview</h1>
-        <p className="text-sm text-zinc-500">
-          Rotation mode: <strong>{policy.data?.enforcement_mode === "enforce" ? "Enforcing" : "Dry run (no changes sent to VICIdial)"}</strong>
-        </p>
-      </section>
+    <>
+      <PageHeader
+        title="Overview"
+        description="Caller-ID pool health, live agents and dialer sync at a glance."
+        action={
+          <StatusPill tone={enforcing ? "success" : "warning"}>
+            Rotation: {enforcing ? "enforcing" : "dry run, no changes sent to VICIdial"}
+          </StatusPill>
+        }
+      />
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">Number pool</h2>
-        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <section className="flex flex-col gap-4">
+        <SectionLabel>Number pool</SectionLabel>
+        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {LIFECYCLES.map((l) => (
-            <div key={l} className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-              <dt className="text-xs text-zinc-500">{l}</dt>
-              <dd className="text-2xl font-semibold tabular-nums">{byLifecycle[l]}</dd>
+            <div key={l.key} className="flex flex-col gap-2 rounded-lg bg-surface-alt p-6">
+              <dt>
+                <StatusPill tone={LIFECYCLE_TONE[l.key]}>{l.key}</StatusPill>
+              </dt>
+              <dd className="text-title-lg tabular-nums text-ink">{byLifecycle[l.key]}</dd>
+              <dd className="text-legal text-muted">{l.note}</dd>
             </div>
           ))}
         </dl>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-          <div className="text-xs text-zinc-500">Agents logged in</div>
-          <div className="text-2xl font-semibold tabular-nums">{agentRows.length}</div>
-          <div className="text-xs text-zinc-500">{readyAgents} ready</div>
-        </div>
-        <div className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-          <div className="text-xs text-zinc-500">Open alerts</div>
-          <div className="text-2xl font-semibold tabular-nums">{alerts.count ?? 0}</div>
-        </div>
-        <div className="rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
-          <div className="text-xs text-zinc-500">Dialer sync</div>
-          {(dialers.data ?? []).length === 0 ? (
-            <div className="text-sm">No dialer agent connected yet (Phase 1).</div>
-          ) : (
-            (dialers.data ?? []).map((d) => (
-              <div key={d.name} className="text-sm">
-                {d.name}: last heartbeat {d.last_heartbeat_at ? new Date(d.last_heartbeat_at).toLocaleString() : "never"}
-              </div>
-            ))
-          )}
-        </div>
+      <section className="flex flex-col gap-4">
+        <SectionLabel>Operations</SectionLabel>
+        <dl className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <Metric label="Agents logged in" value={agentRows.length} note={`${readyAgents} ready · ${inCall} in call`} />
+          <Metric
+            label="Open alerts"
+            value={<span className={openAlerts > 0 ? "text-error" : undefined}>{openAlerts}</span>}
+            note={openAlerts > 0 ? "Review numbers flagged for attention" : "Nothing needs attention"}
+          />
+          <Metric
+            label="Dialer sync"
+            value={dialerRows.length === 0 ? "—" : dialerRows.length}
+            note={
+              dialerRows.length === 0
+                ? "No dialer agent connected yet"
+                : dialerRows
+                    .map((d) => `${d.name}: ${d.last_heartbeat_at ? new Date(d.last_heartbeat_at).toLocaleTimeString() : "never"}`)
+                    .join(" · ")
+            }
+          />
+        </dl>
       </section>
-    </div>
+
+      {dialerRows.length === 0 && (
+        <Card className="flex flex-col gap-2">
+          <h2 className="text-title-sm text-ink">Next: connect the dialer</h2>
+          <p className="max-w-[65ch] text-caption text-muted">
+            Phase 1 installs the sync agent on the VICIdial server. Live agents, per-number call counts and heartbeats will
+            appear here within seconds of it starting.
+          </p>
+        </Card>
+      )}
+    </>
   );
 }

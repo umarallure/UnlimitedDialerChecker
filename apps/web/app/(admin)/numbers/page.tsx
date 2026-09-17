@@ -1,5 +1,12 @@
+import { Alert, DataTable, EmptyRow, PageHeader, StatusPill } from "@/components/ui";
 import { requireAdmin } from "@/lib/dal";
+import { LIFECYCLE_TONE } from "@/lib/status";
 import { createClient } from "@/lib/supabase/server";
+
+function formatE164(e164: string) {
+  const d = e164.replace(/^\+1/, "");
+  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : e164;
+}
 
 export default async function NumbersPage() {
   await requireAdmin();
@@ -10,55 +17,59 @@ export default async function NumbersPage() {
     .order("state")
     .order("e164");
 
+  const rows = dids ?? [];
+
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold">Numbers</h1>
-        <p className="text-sm text-zinc-500">CSV import, health scoring and reputation scans arrive in Phase 2.</p>
-      </div>
-      {error && <p className="text-sm text-red-600">Couldn’t load numbers: {error.message}</p>}
-      <div className="overflow-x-auto rounded-md border border-zinc-200 dark:border-zinc-800">
-        <table className="w-full min-w-[640px] text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-900">
-            <tr>
-              <th className="px-3 py-2">Number</th>
-              <th className="px-3 py-2">State</th>
-              <th className="px-3 py-2">Lifecycle</th>
-              <th className="px-3 py-2">Calls today / cap</th>
-              <th className="px-3 py-2">Answered</th>
-              <th className="px-3 py-2">Attestation</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(dids ?? []).length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-zinc-500">
-                  No numbers yet. Teleinx DIDs will be imported here.
+    <>
+      <PageHeader
+        title="Numbers"
+        description="Every caller-ID DID in the pool with today’s usage against its cap. CSV import, health scoring and reputation scans arrive in Phase 2."
+      />
+      {error && <Alert>Couldn’t load numbers: {error.message}</Alert>}
+      <DataTable head={["Number", "State", "Lifecycle", "Calls today / cap", "Answered", "Attestation"]} minWidth={720}>
+        {rows.length === 0 ? (
+          <EmptyRow colSpan={6}>No numbers yet. Teleinx DIDs will be imported here.</EmptyRow>
+        ) : (
+          rows.map((d) => {
+            const live = Array.isArray(d.did_stats_live) ? d.did_stats_live[0] : d.did_stats_live;
+            const calls = live?.calls_today ?? 0;
+            const usage = d.daily_cap > 0 ? Math.min(calls / d.daily_cap, 1) : 0;
+            return (
+              <tr key={d.id} className="hover:bg-surface-alt">
+                <td className="font-mono text-code !text-ink">{formatE164(d.e164)}</td>
+                <td>{d.state ?? "—"}</td>
+                <td>
+                  <span className="flex flex-wrap gap-1">
+                    <StatusPill tone={LIFECYCLE_TONE[d.lifecycle] ?? "neutral"}>{d.lifecycle}</StatusPill>
+                    {d.manual_hold && <StatusPill tone="error">Held</StatusPill>}
+                  </span>
+                </td>
+                <td>
+                  <span className="flex items-center gap-3">
+                    <span className="tabular-nums">
+                      {calls} / {d.daily_cap}
+                    </span>
+                    <span aria-hidden className="h-1.5 w-20 overflow-hidden rounded-full bg-line">
+                      <span
+                        className={`block h-full rounded-full ${usage >= 1 ? "bg-error" : usage >= 0.8 ? "bg-warning" : "bg-success"}`}
+                        style={{ width: `${usage * 100}%` }}
+                      />
+                    </span>
+                  </span>
+                </td>
+                <td className="tabular-nums">{live?.answered_today ?? 0}</td>
+                <td>
+                  {d.attestation ? (
+                    <StatusPill tone={d.attestation === "A" ? "success" : "error"}>{d.attestation}</StatusPill>
+                  ) : (
+                    "—"
+                  )}
                 </td>
               </tr>
-            ) : (
-              (dids ?? []).map((d) => {
-                const live = Array.isArray(d.did_stats_live) ? d.did_stats_live[0] : d.did_stats_live;
-                return (
-                  <tr key={d.id} className="border-t border-zinc-200 dark:border-zinc-800">
-                    <td className="px-3 py-2 font-mono">{d.e164}</td>
-                    <td className="px-3 py-2">{d.state ?? "—"}</td>
-                    <td className="px-3 py-2">
-                      {d.lifecycle}
-                      {d.manual_hold ? " · held" : ""}
-                    </td>
-                    <td className="px-3 py-2 tabular-nums">
-                      {live?.calls_today ?? 0} / {d.daily_cap}
-                    </td>
-                    <td className="px-3 py-2 tabular-nums">{live?.answered_today ?? 0}</td>
-                    <td className="px-3 py-2">{d.attestation ?? "—"}</td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+            );
+          })
+        )}
+      </DataTable>
+    </>
   );
 }

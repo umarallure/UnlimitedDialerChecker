@@ -1,4 +1,6 @@
-import Link from "next/link";
+import { Wordmark } from "@/components/auth-shell";
+import { NavLink } from "@/components/nav-link";
+import { GhostButton } from "@/components/ui";
 import { requireAdmin } from "@/lib/dal";
 
 const NAV = [
@@ -12,25 +14,27 @@ export default async function AdminLayout({ children }: LayoutProps<"/">) {
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      <header className="border-b border-zinc-200 dark:border-zinc-800">
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-          <span className="font-semibold">Unlimited Dialer Checker</span>
-          <nav className="flex gap-4 text-sm">
+      <header className="border-b border-line bg-surface">
+        <div className="mx-auto flex w-full max-w-[1280px] flex-wrap items-center gap-x-10 px-6 lg:px-8">
+          <div className="flex h-[72px] items-center">
+            <Wordmark />
+          </div>
+          <nav aria-label="Main" className="flex gap-8">
             {NAV.map((item) => (
-              <Link key={item.href} href={item.href} className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100">
+              <NavLink key={item.href} href={item.href}>
                 {item.label}
-              </Link>
+              </NavLink>
             ))}
           </nav>
-          <div className="ml-auto flex items-center gap-3 text-sm text-zinc-500">
-            <span>{admin.email}</span>
+          <div className="ml-auto flex h-[72px] items-center gap-2">
+            <span className="hidden text-caption text-muted sm:inline">{admin.email}</span>
             <form action="/auth/signout" method="post">
-              <button className="underline">Sign out</button>
+              <GhostButton>Sign out</GhostButton>
             </form>
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{children}</main>
+      <main className="mx-auto flex w-full max-w-[1280px] flex-1 flex-col gap-10 px-6 py-10 lg:px-8">{children}</main>
     </div>
   );
 }

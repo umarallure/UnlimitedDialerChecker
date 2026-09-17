@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Alert, Field, Input, PrimaryButton } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 
 type Mode =
@@ -72,24 +73,23 @@ export function MfaForm() {
   }
 
   if (mode.kind === "loading") {
-    return <p className="text-sm text-zinc-500">{error ?? "Loading…"}</p>;
+    return error ? <Alert>{error}</Alert> : <p className="text-caption text-muted">Loading…</p>;
   }
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
       {mode.kind === "enroll" && (
-        <div className="flex flex-col gap-2 text-sm">
-          <p>Scan this code with your authenticator app, then enter the 6-digit code.</p>
+        <div className="flex flex-col gap-4 rounded-lg bg-surface-alt p-6">
+          <p className="text-caption text-body">Scan this code with your authenticator app, then enter the 6-digit code below.</p>
           {/* eslint-disable-next-line @next/next/no-img-element -- data: URI from Supabase */}
-          <img src={mode.qr} alt="Authenticator QR code" className="h-44 w-44 rounded bg-white p-2" />
-          <p className="text-zinc-500">
-            Can’t scan? Secret: <code className="break-all">{mode.secret}</code>
+          <img src={mode.qr} alt="Authenticator QR code" className="size-44 rounded-md border border-line bg-surface p-2" />
+          <p className="text-legal text-muted">
+            Can’t scan? Enter this secret: <code className="break-all font-mono text-code text-ink">{mode.secret}</code>
           </p>
         </div>
       )}
-      <label className="flex flex-col gap-1 text-sm">
-        6-digit code
-        <input
+      <Field label="6-digit code">
+        <Input
           id="code"
           inputMode="numeric"
           autoComplete="one-time-code"
@@ -98,20 +98,13 @@ export function MfaForm() {
           required
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          className="rounded-md border border-zinc-300 bg-white px-3 py-2 tracking-widest dark:border-zinc-700 dark:bg-zinc-900"
+          className="font-mono tracking-[0.3em]"
         />
-      </label>
-      {error && (
-        <p role="alert" className="text-sm text-red-600">
-          {error}
-        </p>
-      )}
-      <button
-        disabled={busy}
-        className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900"
-      >
+      </Field>
+      {error && <Alert>{error}</Alert>}
+      <PrimaryButton disabled={busy} className="mt-2 w-full">
         {busy ? "Verifying…" : "Verify"}
-      </button>
+      </PrimaryButton>
     </form>
   );
 }
