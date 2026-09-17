@@ -1,6 +1,6 @@
 {
   "name": "@udc/agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Runs on the VICIdial server: syncs live agents and per-caller-ID stats to Supabase.",

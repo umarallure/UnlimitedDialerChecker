@@ -6,7 +6,7 @@ export default async function AgentsPage() {
   await requireAdmin();
   return (
     <>
-      <PageHeader title="Agents" description="Live VICIdial agent states, updated every few seconds from the dialer." />
+      <PageHeader title="Agents" description="VICIdial agent states, synced from the dialer every 15 minutes." />
       <AgentsBoard />
     </>
   );

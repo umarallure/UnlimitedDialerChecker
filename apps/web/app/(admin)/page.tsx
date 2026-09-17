@@ -134,7 +134,7 @@ export default async function OverviewPage() {
             icon={<PhoneOutgoing className="size-5" strokeWidth={1.75} />}
             eyebrow="Agents"
             title={`${agentRows.length} logged in, ${ready} ready`}
-            body="Live states update every few seconds."
+            body="Agent states sync every 15 minutes."
           />
           <div className="flex flex-wrap gap-2 px-2 pt-2">
             {(["NEW", "WARMING", "ACTIVE", "COOLING", "RETIRED"] as const).map((l) => (

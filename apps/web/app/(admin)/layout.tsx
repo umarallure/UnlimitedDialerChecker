@@ -4,7 +4,8 @@ import { requireAdmin } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
 import { isFresh, relative } from "@/lib/time";
 
-const HEARTBEAT_STALE_MS = 2 * 60_000;
+// The agent syncs every 15 minutes; flag it offline after missing one sync plus 5 minutes of slack.
+const HEARTBEAT_STALE_MS = 20 * 60_000;
 
 export default async function AdminLayout({ children }: LayoutProps<"/">) {
   const admin = await requireAdmin();

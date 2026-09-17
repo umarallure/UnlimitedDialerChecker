@@ -77,8 +77,19 @@ export async function syncStats(db: SupabaseClient, pool: Pool, cfg: Config, sta
   const aggToday = aggregateByCid(todayRows, aggOpts);
   const aggYesterday = aggregateByCid(yesterdayRows, aggOpts);
 
+  // Recent call feed rows. First run backfills the retention window; later runs re-read one extra
+  // sync interval plus 15 minutes, so calls that were still in progress get their final status/length.
+  const windowStart = new Date(now.getTime() - cfg.recentCallDays * 86_400_000);
+  const overlapMs = cfg.statsIntervalMs + 15 * 60_000;
+  const since = state.callsCursor ? new Date(state.callsCursor.getTime() - overlapMs) : windowStart;
+  const feedRows = since >= yesterday ? rows.filter((r) => r.callDate >= since) : await fetchCalls(pool, since);
+
   // 1. Make sure every caller ID seen on the dialer exists in the pool (NEW, flagged as not imported).
   const seen = new Set([...aggToday.keys(), ...aggYesterday.keys()]);
+  for (const r of feedRows) {
+    const cid = resolveCid(r.outboundCid, cfg.cidOverride);
+    if (cid) seen.add(cid);
+  }
   if (seen.size) {
     await upsertInBatches(
       db,
@@ -121,11 +132,7 @@ export async function syncStats(db: SupabaseClient, pool: Pool, cfg: Config, sta
   ];
   if (daily.length) await upsertInBatches(db, "did_stats_daily", daily, "did_id,day");
 
-  // 4. Recent call feed. First run backfills the retention window; later runs re-read the last
-  //    15 minutes so calls that finished (status/length changed) are updated.
-  const windowStart = new Date(now.getTime() - cfg.recentCallDays * 86_400_000);
-  const since = state.callsCursor ? new Date(state.callsCursor.getTime() - 15 * 60_000) : windowStart;
-  const feedRows = since >= yesterday ? rows.filter((r) => r.callDate >= since) : await fetchCalls(pool, since);
+  // 4. Recent call feed.
   if (feedRows.length) {
     await upsertInBatches(db, "calls_recent", feedRows.map((r) => callFeedRow(r, cfg, idByE164)), "uniqueid");
   }

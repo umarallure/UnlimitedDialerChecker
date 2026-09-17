@@ -69,7 +69,7 @@ export function AgentsBoard() {
 
       {error && <Alert>Couldn’t load agents: {error}</Alert>}
 
-      <Panel title="Live board" subtitle="Time in state counts up in real time." bodyClassName="px-2 pb-2">
+      <Panel title="Live board" subtitle="Snapshot from the last sync. Time in state counts up from that snapshot." bodyClassName="px-2 pb-2">
         <DataTable head={["Agent", "Status", "Time in state", "Campaign", "Calls today", "Last sync"]} minWidth={680} bare>
           {rows.length === 0 ? (
             <EmptyRow colSpan={6}>No agents logged in.</EmptyRow>

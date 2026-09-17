@@ -48,7 +48,7 @@ export default async function CallsPage() {
       <Panel title="Call feed" subtitle="Latest 100 calls, newest first." bodyClassName="px-2 pb-2">
         <DataTable head={["Time", "Caller ID", "Lead", "Status", "Agent", "Campaign", "Duration", "SIP"]} minWidth={860} bare>
           {(calls ?? []).length === 0 ? (
-            <EmptyRow colSpan={8}>No calls synced yet. The dialer agent fills this feed every minute.</EmptyRow>
+            <EmptyRow colSpan={8}>No calls synced yet. The dialer agent syncs this feed every 15 minutes.</EmptyRow>
           ) : (
             (calls ?? []).map((c) => (
               <tr key={c.uniqueid}>

@@ -3,7 +3,7 @@ import { loadConfig } from "./config";
 import { syncLive, syncStats } from "./sync";
 import { createPool } from "./vicidial";
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.1";
 
 function log(level: "info" | "error", msg: string, extra?: unknown) {
   const line = `${new Date().toISOString()} ${level.toUpperCase()} ${msg}`;
@@ -57,9 +57,9 @@ async function main() {
 
   const stopLive = loop("live", cfg.liveIntervalMs, async () => {
     const n = await syncLive(db, pool, cfg, VERSION);
-    // Log the live loop once a minute to keep the journal readable.
-    liveTicks++;
-    if (liveTicks % Math.max(1, Math.round(60_000 / cfg.liveIntervalMs)) === 1) return `${n} agent(s) logged in`;
+    // Log the live loop about once a minute (every tick when the interval is a minute or longer).
+    const every = Math.max(1, Math.round(60_000 / cfg.liveIntervalMs));
+    if (liveTicks++ % every === 0) return `${n} agent(s) logged in`;
   });
 
   const stopStats = loop("stats", cfg.statsIntervalMs, async () => {
