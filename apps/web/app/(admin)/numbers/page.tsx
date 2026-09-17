@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChevronRight, Flame, Hash, Moon, PhoneOutgoing, Upload, X } from "lucide-react";
 import { Alert, DataTable, EmptyRow, KpiCard, PageHeader, Panel, PrimaryLink, StatusPill } from "@/components/ui";
+import { alertKindLabel, severityTone } from "@/lib/alerts";
 import { requireAdmin } from "@/lib/dal";
 import { LIFECYCLE_LABEL, LIFECYCLE_NOTE, LIFECYCLE_TONE } from "@/lib/status";
 import { createClient } from "@/lib/supabase/server";
@@ -47,9 +48,12 @@ export default async function NumbersPage({ searchParams }: PageProps<"/numbers"
   const held = pool.filter((d) => d.manual_hold).length;
 
   const selected = rows.find((r) => r.id === selectedId) ?? rows[0];
-  const events = selected
-    ? await supabase.from("did_state_events").select("id, from_state, to_state, reason, actor, dry_run, created_at").eq("did_id", selected.id).order("created_at", { ascending: false }).limit(6)
-    : null;
+  const [events, didAlerts] = selected
+    ? await Promise.all([
+        supabase.from("did_state_events").select("id, from_state, to_state, reason, actor, dry_run, created_at").eq("did_id", selected.id).order("created_at", { ascending: false }).limit(6),
+        supabase.from("alerts").select("id, kind, severity, message").eq("did_id", selected.id).is("resolved_at", null).order("severity", { ascending: false }),
+      ])
+    : [null, null];
 
   const hrefWith = (next: Record<string, string | null>) => {
     const sp = new URLSearchParams();
@@ -236,6 +240,18 @@ export default async function NumbersPage({ searchParams }: PageProps<"/numbers"
                       </ol>
                     )}
                   </div>
+
+                  {(didAlerts?.data ?? []).length > 0 && (
+                    <div className="flex flex-col gap-2">
+                      <h3 className="text-title-sm font-bold text-ink">Open alerts</h3>
+                      {(didAlerts?.data ?? []).map((a) => (
+                        <Link key={a.id} href="/alerts" className="flex flex-col gap-1 rounded-lg border border-line p-3 hover:shadow-card-hover">
+                          <StatusPill tone={severityTone(a.severity)}>{alertKindLabel(a.kind)}</StatusPill>
+                          <span className="text-caption text-graphite">{a.message}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
 
                   <div className="rounded-lg bg-surface-alt p-4">
                     <p className="text-caption text-graphite">Next step</p>

@@ -50,7 +50,7 @@ export function TopBar({ email, openAlerts }: { email: string; openAlerts: numbe
 
         <div className="ml-auto flex items-center gap-2 lg:pr-8">
           <Link
-            href="/"
+            href="/alerts"
             aria-label={openAlerts ? `${openAlerts} open alerts` : "No open alerts"}
             className="relative flex size-11 items-center justify-center rounded-full text-graphite hover:bg-surface-alt"
           >
