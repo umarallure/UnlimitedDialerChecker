@@ -2,7 +2,7 @@
 
 /*
  * Design tokens from /DESIGN.md (Brex system). Light theme only: DESIGN.md defines no dark palette.
- * Utilities: bg-canvas, bg-surface, bg-surface-alt, text-ink, text-body, text-muted, border-line,
+ * Utilities: bg-canvas, bg-surface, bg-surface-alt, text-ink, text-graphite, text-muted, border-line,
  * bg-primary, text-title-md, rounded-lg (12px), shadow-card-hover, etc.
  */
 @theme {
@@ -11,7 +11,7 @@
   --color-primary-pressed: #cc4700;
   --color-soft-orange: #fff3ec;
   --color-ink: #15191e;
-  --color-body: #33383f;
+  --color-graphite: #33383f;
   --color-muted: #60646c;
   --color-canvas: #fcfcfd;
   --color-surface: #ffffff;

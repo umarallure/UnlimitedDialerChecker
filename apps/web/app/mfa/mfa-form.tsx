@@ -80,7 +80,7 @@ export function MfaForm() {
     <form onSubmit={submit} className="flex flex-col gap-4">
       {mode.kind === "enroll" && (
         <div className="flex flex-col gap-4 rounded-lg bg-surface-alt p-6">
-          <p className="text-caption text-body">Scan this code with your authenticator app, then enter the 6-digit code below.</p>
+          <p className="text-caption text-graphite">Scan this code with your authenticator app, then enter the 6-digit code below.</p>
           {/* eslint-disable-next-line @next/next/no-img-element -- data: URI from Supabase */}
           <img src={mode.qr} alt="Authenticator QR code" className="size-44 rounded-md border border-line bg-surface p-2" />
           <p className="text-legal text-muted">
