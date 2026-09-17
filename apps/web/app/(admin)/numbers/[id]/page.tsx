@@ -66,7 +66,7 @@ export default async function NumberDetailPage({ params, searchParams }: PagePro
   return (
     <>
       <div className="flex flex-col gap-4">
-        <Link href={`/numbers?id=${did.id}`} className="inline-flex min-h-11 items-center gap-2 self-start text-caption text-graphite hover:text-ink">
+        <Link href="/numbers" className="inline-flex min-h-11 items-center gap-2 self-start text-caption text-graphite hover:text-ink">
           <ArrowLeft aria-hidden className="size-4" /> Numbers
         </Link>
         <div className="flex flex-wrap items-end justify-between gap-4">
