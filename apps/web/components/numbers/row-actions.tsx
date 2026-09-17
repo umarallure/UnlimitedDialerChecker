@@ -4,10 +4,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { runNumberAction } from "@/lib/number-actions";
 
-const btn =
-  "relative z-10 inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-full border border-line bg-surface px-3 text-legal font-semibold text-ink hover:border-line-strong disabled:opacity-50";
+// Base layout only; colors live in the variants so they never compete in the cascade.
+const base =
+  "relative z-10 inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-full border px-3 text-legal font-semibold transition-colors disabled:opacity-50";
+const secondary = `${base} border-line bg-surface text-ink hover:border-line-strong`;
+const primary = `${base} border-ink bg-ink text-on-dark hover:border-graphite hover:bg-graphite`;
 
-/** Inline row actions: finish setup, hold/release in place, open the detail page. */
+/** Inline row actions: finish setup, hold/release in place, view details, manage. */
 export function RowActions({
   id,
   label,
@@ -41,18 +44,21 @@ export function RowActions({
 
   return (
     <span className="flex flex-col items-end gap-1">
-      <span className="flex items-center justify-end gap-2">
+      <span className="flex flex-wrap items-center justify-end gap-2">
         {!setupComplete && !retired && (
-          <Link href={`/numbers/${id}?tab=setup`} className={btn}>
+          <Link href={`/numbers/${id}?tab=setup`} className={secondary}>
             Setup
           </Link>
         )}
         {!retired && (
-          <button type="button" onClick={() => void toggleHold()} disabled={busy} className={btn} aria-label={`${held ? "Release" : "Hold"} ${label}`}>
-            {busy ? "…" : held ? "Release" : "Hold"}
+          <button type="button" onClick={() => void toggleHold()} disabled={busy} className={secondary} aria-label={`${held ? "Release" : "Hold"} ${label}`}>
+            {busy ? "Saving…" : held ? "Release" : "Hold"}
           </button>
         )}
-        <Link href={`/numbers/${id}`} className={`${btn} border-ink bg-ink text-on-dark hover:bg-graphite`} aria-label={`Manage ${label}`}>
+        <Link href={`/numbers/${id}`} className={secondary} aria-label={`View details for ${label}`}>
+          View details
+        </Link>
+        <Link href={`/numbers/${id}?tab=actions`} className={primary} aria-label={`Manage ${label}`}>
           Manage
         </Link>
       </span>

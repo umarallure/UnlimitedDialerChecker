@@ -215,11 +215,14 @@ export function DataTable({
   children,
   minWidth = 640,
   bare = false,
+  alignRight = [],
 }: {
   head: string[];
   children: ReactNode;
   minWidth?: number;
   bare?: boolean;
+  /** Column indexes whose header is right-aligned (match with text-right cells). */
+  alignRight?: number[];
 }) {
   return (
     <div className={cx("overflow-x-auto", !bare && "rounded-lg border border-line bg-surface")}>
@@ -227,7 +230,7 @@ export function DataTable({
         <thead>
           <tr className={cx("border-b border-line text-left", bare ? "bg-surface-alt" : "bg-surface")}>
             {head.map((h, i) => (
-              <th key={`${h}-${i}`} scope="col" className="px-6 py-3.5 text-caption font-medium text-graphite">
+              <th key={`${h}-${i}`} scope="col" className={cx("px-6 py-3.5 text-caption font-medium text-graphite", alignRight.includes(i) && "text-right")}>
                 {h}
               </th>
             ))}

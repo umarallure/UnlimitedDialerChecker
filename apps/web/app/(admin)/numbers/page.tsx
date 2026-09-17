@@ -111,7 +111,7 @@ export default async function NumbersPage({ searchParams }: PageProps<"/numbers"
       <Panel bodyClassName="p-0">
           <NumberSelection ids={rows.map((r) => r.id)}>
             <BulkBar />
-            <DataTable head={["", "Number", "Lifecycle", "Setup", "Calls today / cap", "Answered", "Last call", "Actions"]} minWidth={1040} bare>
+            <DataTable head={["", "Number", "Lifecycle", "Setup", "Calls today / cap", "Answered", "Last call", "Actions"]} minWidth={1160} alignRight={[7]} bare>
               {rows.length === 0 ? (
                 <EmptyRow colSpan={8}>{q || lifecycle ? "No numbers match these filters." : "No numbers yet. Use Import numbers to add your Teleinx DIDs."}</EmptyRow>
               ) : (
