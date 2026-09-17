@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { ChevronRight, Flame, Hash, Moon, PhoneOutgoing, X } from "lucide-react";
-import { Alert, DataTable, EmptyRow, KpiCard, PageHeader, Panel, StatusPill } from "@/components/ui";
+import { ChevronRight, Flame, Hash, Moon, PhoneOutgoing, Upload, X } from "lucide-react";
+import { Alert, DataTable, EmptyRow, KpiCard, PageHeader, Panel, PrimaryLink, StatusPill } from "@/components/ui";
 import { requireAdmin } from "@/lib/dal";
 import { LIFECYCLE_LABEL, LIFECYCLE_NOTE, LIFECYCLE_TONE } from "@/lib/status";
 import { createClient } from "@/lib/supabase/server";
@@ -83,9 +83,12 @@ export default async function NumbersPage({ searchParams }: PageProps<"/numbers"
                 </option>
               ))}
             </select>
-            <button className="inline-flex min-h-11 items-center rounded-full bg-primary px-5 text-button text-on-primary hover:bg-primary-hover active:bg-primary-pressed">
+            <button className="inline-flex min-h-11 items-center rounded-full border border-line bg-surface px-5 text-button text-ink hover:border-line-strong">
               Apply filter
             </button>
+            <PrimaryLink href="/numbers/import">
+              <Upload aria-hidden className="size-4" /> Import numbers
+            </PrimaryLink>
           </form>
         }
       />
@@ -120,7 +123,7 @@ export default async function NumbersPage({ searchParams }: PageProps<"/numbers"
         <Panel bodyClassName="p-0">
           <DataTable head={["Number", "Lifecycle", "Calls today / cap", "Answered", "Last call", ""]} minWidth={720}  bare>
             {rows.length === 0 ? (
-              <EmptyRow colSpan={6}>{q || lifecycle ? "No numbers match these filters." : "No numbers yet. Teleinx DIDs will be imported here."}</EmptyRow>
+              <EmptyRow colSpan={6}>{q || lifecycle ? "No numbers match these filters." : "No numbers yet. Use Import numbers to add your Teleinx DIDs."}</EmptyRow>
             ) : (
               rows.map((d) => {
                 const live = first(d.did_stats_live as LiveStats | LiveStats[]);

@@ -29,7 +29,8 @@ export async function proxy(request: NextRequest) {
   const signedIn = Boolean(data?.claims?.sub);
   const path = request.nextUrl.pathname;
 
-  if (!signedIn && !PUBLIC_PATHS.some((p) => path.startsWith(p))) {
+  // API routes authorize themselves (getAdminForApi) and return JSON 401/403 instead of a redirect.
+  if (!signedIn && !path.startsWith("/api/") && !PUBLIC_PATHS.some((p) => path.startsWith(p))) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
