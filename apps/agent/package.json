@@ -1,0 +1,22 @@
+{
+  "name": "@udc/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Runs on the VICIdial server: syncs live agents and per-caller-ID stats to Supabase.",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/dialer-agent.mjs --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
+    "mysql2": "^3.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "esbuild": "^0.25.0",
+    "typescript": "^5",
+    "vitest": "^5.0.1"
+  }
+}

@@ -1,0 +1,27 @@
+[Unit]
+Description=Unlimited Dialer Checker agent (VICIdial -> Supabase sync)
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dialer-agent
+Group=dialer-agent
+EnvironmentFile=/etc/dialer-agent.env
+Environment=TZ=America/New_York
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node /opt/dialer-agent/dialer-agent.mjs
+Restart=always
+RestartSec=10
+# Keep the agent from ever affecting the dialer: low priority, capped memory and CPU.
+Nice=10
+MemoryMax=256M
+CPUQuota=25%
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/opt/dialer-agent
+
+[Install]
+WantedBy=multi-user.target

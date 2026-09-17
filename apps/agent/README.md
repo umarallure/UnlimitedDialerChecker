@@ -1,6 +1,6 @@
 # Dialer agent (Phase 1)
 
-Runs **on the VICIdial server** as a systemd service (Node 22). Not built yet — this folder is a placeholder.
+Runs **on the VICIdial server** as a systemd service (Node 22). Phase 1 (read-only sync) is built; enforcement and commands come in Phase 3.
 
 Responsibilities, in build order:
 
@@ -13,3 +13,13 @@ Responsibilities, in build order:
 
 Runs with two local MySQL users: read-only for sync, and a user limited to the CID tables for enforcement.
 Configuration comes from `/etc/dialer-agent.env` (root-only), never from this repo.
+
+## Build and deploy
+
+```bash
+pnpm --filter @udc/agent test && pnpm --filter @udc/agent build   # → apps/agent/dist/dialer-agent.mjs
+```
+
+On the dialer: copy the bundle to `/opt/dialer-agent/dialer-agent.mjs`, the unit to `/etc/systemd/system/`,
+and create `/etc/dialer-agent.env` from `deploy/dialer-agent.env.example` (root:dialer-agent, 640). Then
+`systemctl daemon-reload && systemctl enable --now dialer-agent` and follow `journalctl -u dialer-agent -f`.
