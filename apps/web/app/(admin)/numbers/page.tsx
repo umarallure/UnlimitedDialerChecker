@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { ChevronRight, Flame, Hash, Moon, PhoneOutgoing, Upload, X } from "lucide-react";
 import { Alert, DataTable, EmptyRow, KpiCard, PageHeader, Panel, PrimaryLink, StatusPill } from "@/components/ui";
+import { BulkBar, NumberSelection, RowCheckbox } from "@/components/numbers/bulk-selection";
+import { NumberActions } from "@/components/numbers/number-actions";
 import { alertKindLabel, severityTone } from "@/lib/alerts";
 import { requireAdmin } from "@/lib/dal";
+import { setupProgress } from "@/lib/number-actions";
 import { LIFECYCLE_LABEL, LIFECYCLE_NOTE, LIFECYCLE_TONE } from "@/lib/status";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, formatDateTime, formatPhone, relative } from "@/lib/time";
@@ -27,7 +30,7 @@ export default async function NumbersPage({ searchParams }: PageProps<"/numbers"
   let query = supabase
     .from("dids")
     .select(
-      "id, e164, state, area_code, lifecycle, lifecycle_since, daily_cap, hourly_cap, manual_hold, manual_hold_reason, attestation, carrier, notes, purchased_at, fcr_registered_at, inbound_route_ok, did_stats_live(calls_today, calls_last_hour, answered_today, short_calls_today, drops_today, last_call_at)",
+      "id, e164, state, area_code, lifecycle, lifecycle_since, daily_cap, hourly_cap, manual_hold, manual_hold_reason, attestation, carrier, notes, purchased_at, fcr_registered_at, inbound_route_ok, cnam, cap_override, did_stats_live(calls_today, calls_last_hour, answered_today, short_calls_today, drops_today, last_call_at)",
     )
     .order("state", { nullsFirst: false })
     .order("e164");
@@ -50,7 +53,7 @@ export default async function NumbersPage({ searchParams }: PageProps<"/numbers"
   const selected = rows.find((r) => r.id === selectedId) ?? rows[0];
   const [events, didAlerts] = selected
     ? await Promise.all([
-        supabase.from("did_state_events").select("id, from_state, to_state, reason, actor, dry_run, created_at").eq("did_id", selected.id).order("created_at", { ascending: false }).limit(6),
+        supabase.from("did_state_events").select("id, from_state, to_state, reason, actor, dry_run, created_at").eq("did_id", selected.id).order("created_at", { ascending: false }).limit(10),
         supabase.from("alerts").select("id, kind, severity, message").eq("did_id", selected.id).is("resolved_at", null).order("severity", { ascending: false }),
       ])
     : [null, null];
@@ -125,18 +128,25 @@ export default async function NumbersPage({ searchParams }: PageProps<"/numbers"
 
       <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
         <Panel bodyClassName="p-0">
-          <DataTable head={["Number", "Lifecycle", "Calls today / cap", "Answered", "Last call", ""]} minWidth={720}  bare>
+          <NumberSelection ids={rows.map((r) => r.id)}>
+          <BulkBar />
+          <DataTable head={["", "Number", "Lifecycle", "Setup", "Calls today / cap", "Answered", "Last call", ""]} minWidth={860} bare>
             {rows.length === 0 ? (
-              <EmptyRow colSpan={6}>{q || lifecycle ? "No numbers match these filters." : "No numbers yet. Use Import numbers to add your Teleinx DIDs."}</EmptyRow>
+              <EmptyRow colSpan={8}>{q || lifecycle ? "No numbers match these filters." : "No numbers yet. Use Import numbers to add your Teleinx DIDs."}</EmptyRow>
             ) : (
               rows.map((d) => {
                 const live = first(d.did_stats_live as LiveStats | LiveStats[]);
                 const calls = live?.calls_today ?? 0;
-                const usage = d.daily_cap > 0 ? Math.min(calls / d.daily_cap, 1) : 0;
+                const usage = (d.cap_override ?? d.daily_cap) > 0 ? Math.min(calls / (d.cap_override ?? d.daily_cap), 1) : 0;
                 const isSelected = selected?.id === d.id;
+                const setup = setupProgress(d);
+                const cap = d.cap_override ?? d.daily_cap;
                 return (
                   <tr key={d.id} className={`relative ${isSelected ? "bg-surface-alt" : "hover:bg-surface-alt"}`}>
-                    <td className={isSelected ? "shadow-[inset_3px_0_0_var(--color-primary)]" : undefined}>
+                    <td className={`w-12 !px-2 ${isSelected ? "shadow-[inset_3px_0_0_var(--color-primary)]" : ""}`}>
+                      <RowCheckbox id={d.id} label={formatPhone(d.e164)} />
+                    </td>
+                    <td>
                       <Link href={hrefWith({ id: d.id })} className="flex flex-col after:absolute after:inset-0" aria-current={isSelected ? "true" : undefined}>
                         <span className="font-semibold text-ink tabular-nums">{formatPhone(d.e164)}</span>
                         <span className="text-legal text-muted">
@@ -151,9 +161,15 @@ export default async function NumbersPage({ searchParams }: PageProps<"/numbers"
                       </span>
                     </td>
                     <td>
+                      <StatusPill tone={setup.done === setup.total ? "success" : "neutral"}>
+                        {setup.done}/{setup.total}
+                      </StatusPill>
+                    </td>
+                    <td>
                       <span className="flex items-center gap-3">
                         <span className="tabular-nums">
-                          {calls} / {d.daily_cap}
+                          {calls} / {cap}
+                          {d.cap_override !== null && <span className="text-muted">*</span>}
                         </span>
                         <span aria-hidden className="h-1.5 w-20 overflow-hidden rounded-full bg-line">
                           <span
@@ -176,6 +192,7 @@ export default async function NumbersPage({ searchParams }: PageProps<"/numbers"
               })
             )}
           </DataTable>
+          </NumberSelection>
         </Panel>
 
         {selected && (
@@ -186,11 +203,8 @@ export default async function NumbersPage({ searchParams }: PageProps<"/numbers"
               const fields: Array<[string, React.ReactNode]> = [
                 ["Lifecycle", <StatusPill key="l" tone={LIFECYCLE_TONE[selected.lifecycle]}>{LIFECYCLE_LABEL[selected.lifecycle]}</StatusPill>],
                 ["In state since", formatDate(selected.lifecycle_since)],
-                ["Caps", `${selected.daily_cap}/day · ${selected.hourly_cap}/hour`],
+                ["Caps", `${selected.cap_override ?? selected.daily_cap}/day${selected.cap_override !== null ? " (override)" : ""} · ${selected.hourly_cap}/hour`],
                 ["Carrier", selected.carrier],
-                ["Attestation", selected.attestation ? <StatusPill key="a" tone={selected.attestation === "A" ? "success" : "error"}>{selected.attestation}</StatusPill> : "Unknown"],
-                ["Free Caller Registry", selected.fcr_registered_at ? formatDate(selected.fcr_registered_at) : "Not registered"],
-                ["Callback route", selected.inbound_route_ok ? "Verified" : "Not verified"],
               ];
               const eventRows = events?.data ?? [];
               return (
@@ -230,10 +244,13 @@ export default async function NumbersPage({ searchParams }: PageProps<"/numbers"
                             <span className="flex flex-col gap-0.5">
                               <span className="text-legal text-muted">{formatDateTime(e.created_at)}</span>
                               <span className="text-caption font-semibold text-ink">
-                                {LIFECYCLE_LABEL[e.from_state ?? ""] ?? "Added"} → {LIFECYCLE_LABEL[e.to_state]}
+                                {e.from_state === e.to_state ? LIFECYCLE_LABEL[e.to_state] : `${LIFECYCLE_LABEL[e.from_state ?? ""] ?? "Added"} → ${LIFECYCLE_LABEL[e.to_state]}`}
                                 {e.dry_run ? " (dry run)" : ""}
                               </span>
-                              <span className="text-caption text-muted">{e.reason}</span>
+                              <span className="text-caption text-muted">
+                                {e.reason}
+                                {e.actor && e.actor !== "agent" ? ` · ${e.actor}` : ""}
+                              </span>
                             </span>
                           </li>
                         ))}
@@ -252,6 +269,23 @@ export default async function NumbersPage({ searchParams }: PageProps<"/numbers"
                       ))}
                     </div>
                   )}
+
+                  <NumberActions
+                    key={selected.id}
+                    did={{
+                      id: selected.id,
+                      lifecycle: selected.lifecycle,
+                      manual_hold: selected.manual_hold,
+                      manual_hold_reason: selected.manual_hold_reason,
+                      fcr_registered_at: selected.fcr_registered_at,
+                      inbound_route_ok: selected.inbound_route_ok,
+                      attestation: selected.attestation,
+                      cnam: selected.cnam,
+                      notes: selected.notes,
+                      cap_override: selected.cap_override,
+                      daily_cap: selected.daily_cap,
+                    }}
+                  />
 
                   <div className="rounded-lg bg-surface-alt p-4">
                     <p className="text-caption text-graphite">Next step</p>
