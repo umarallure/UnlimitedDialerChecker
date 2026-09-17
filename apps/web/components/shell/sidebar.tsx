@@ -74,7 +74,7 @@ export function Sidebar() {
           ))}
         </nav>
         <div className="flex flex-col gap-1.5">
-          <Item item={{ href: "/settings", label: "Settings", icon: "settings", soon: "a later phase" }} pathname={pathname} />
+          <Item item={{ href: "/settings", label: "Settings", icon: "settings" }} pathname={pathname} />
           <a
             href="https://github.com/umarallure/UnlimitedDialerChecker#readme"
             target="_blank"

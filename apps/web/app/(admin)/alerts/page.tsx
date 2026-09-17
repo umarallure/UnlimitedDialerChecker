@@ -22,12 +22,11 @@ export default async function AlertsPage({ searchParams }: PageProps<"/alerts">)
       ? listQuery.is("resolved_at", null).order("severity", { ascending: false }).order("created_at", { ascending: false })
       : listQuery.not("resolved_at", "is", null).order("resolved_at", { ascending: false });
 
-  const [list, openAll, resolved24, settings, lastEmail] = await Promise.all([
+  const [list, openAll, resolved24, settings] = await Promise.all([
     listQuery,
     supabase.from("alerts").select("severity").is("resolved_at", null),
     supabase.from("alerts").select("id", { count: "exact", head: true }).gte("resolved_at", hoursAgoIso(24)),
-    supabase.from("notification_settings").select("recipients, immediate_enabled, digest_enabled, digest_hour_et, last_run_at, last_error").maybeSingle(),
-    supabase.from("notification_log").select("kind, status, subject, sent_at").order("sent_at", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("notification_settings").select("recipients, last_run_at, last_error").maybeSingle(),
   ]);
 
   const open = openAll.data ?? [];
@@ -36,7 +35,6 @@ export default async function AlertsPage({ searchParams }: PageProps<"/alerts">)
   const s = settings.data;
   const emailReady = s && !s.last_error;
   const rows = list.data ?? [];
-  const hour = s ? new Date(2000, 0, 1, s.digest_hour_et).toLocaleTimeString("en-US", { hour: "numeric" }) : "8 AM";
 
   return (
     <>
@@ -50,23 +48,24 @@ export default async function AlertsPage({ searchParams }: PageProps<"/alerts">)
         <KpiCard label="Critical" value={critical} note={critical ? "Emailed immediately" : "None open"} noteTone={critical ? "error" : "muted"} icon={<AlertOctagon className="size-5" strokeWidth={1.75} />} />
         <KpiCard label="Warnings" value={warnings} note="Included in the daily summary" noteTone={warnings ? "warning" : "muted"} icon={<AlertTriangle className="size-5" strokeWidth={1.75} />} />
         <KpiCard label="Resolved, last 24 h" value={resolved24.count ?? 0} icon={<CheckCircle2 className="size-5" strokeWidth={1.75} />} />
-        <KpiCard
-          label="Email"
-          value={emailReady ? "On" : "Setup"}
-          note={s?.last_run_at ? `Last check ${relative(s.last_run_at)}` : "Not run yet"}
-          noteTone={emailReady ? "success" : "warning"}
-          icon={<Mail className="size-5" strokeWidth={1.75} />}
-        />
+        <Link href="/settings" className="rounded-lg focus-visible:outline-2 focus-visible:outline-primary" aria-label="Email notification settings">
+          <KpiCard
+            label="Email"
+            value={emailReady ? "On" : "Setup"}
+            note={s?.recipients?.length ? `${s.recipients.join(", ")} · settings →` : "Add recipients in Settings →"}
+            noteTone={emailReady ? "success" : "warning"}
+            icon={<Mail className="size-5" strokeWidth={1.75} />}
+          />
+        </Link>
       </div>
 
       {s?.last_error && (
         <Alert tone="warning">
-          Emails aren’t sending: {s.last_error}. Alerts still appear here. Add the Resend key and sender address in Supabase → Edge Functions → Secrets.
+          Emails aren’t sending: {s.last_error}. Alerts still appear here. Check delivery status in <Link href="/settings" className="underline">Settings</Link>.
         </Alert>
       )}
 
-      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <Panel
+      <Panel
           title={view === "open" ? "Open alerts" : "Resolved alerts"}
           action={
             <nav aria-label="Alert view" className="flex gap-2">
@@ -139,29 +138,6 @@ export default async function AlertsPage({ searchParams }: PageProps<"/alerts">)
           </DataTable>
         </Panel>
 
-        <Panel title="Email notifications" bodyClassName="flex flex-col gap-4 px-6 pb-6 text-caption">
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3">
-            <dt className="text-muted">Recipients</dt>
-            <dd className="break-words text-ink">{s?.recipients?.join(", ") ?? "—"}</dd>
-            <dt className="text-muted">Immediate</dt>
-            <dd className="text-ink">{s?.immediate_enabled ? "Critical alerts, within 15 minutes" : "Off"}</dd>
-            <dt className="text-muted">Daily summary</dt>
-            <dd className="text-ink">{s?.digest_enabled ? `${hour} Eastern` : "Off"}</dd>
-            <dt className="text-muted">Last email</dt>
-            <dd className="text-ink">{lastEmail.data ? `${lastEmail.data.kind === "digest" ? "Summary" : "Alert"} · ${lastEmail.data.status} · ${relative(lastEmail.data.sent_at)}` : "None yet"}</dd>
-          </dl>
-          <div className="rounded-lg bg-surface-alt p-4 text-graphite">
-            <p className="font-semibold text-ink">What triggers an alert</p>
-            <ul className="mt-2 flex list-disc flex-col gap-1 pl-4">
-              <li>Answer rate under 8% over 3 days</li>
-              <li>More than 30% of answered calls under 6 seconds</li>
-              <li>Drops over 3%, or 5+ carrier 608 rejections</li>
-              <li>Any spam label from a reputation scan</li>
-              <li>Dialer not synced for 20 minutes</li>
-            </ul>
-          </div>
-        </Panel>
-      </div>
     </>
   );
 }
