@@ -2,6 +2,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { describeAction } from "@/lib/action-messages";
 import { runNumberAction } from "@/lib/number-actions";
 
 // Base layout only; colors live in the variants so they never compete in the cascade.
@@ -26,25 +28,27 @@ export function RowActions({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   async function toggleHold() {
     if (!held && !window.confirm(`Hold ${label}? It won’t dial until released.`)) return;
     setBusy(true);
-    setError(null);
+    const action = held ? "release" : "hold";
+    const payload = held ? {} : { reason: "Held from numbers list" };
     try {
-      await runNumberAction([id], held ? "release" : "hold", held ? {} : { reason: "Held from numbers list" });
+      const r = await runNumberAction([id], action, payload);
+      const msg = describeAction(action, payload, r, label);
+      if (msg.noop) toast.info(msg.title, { description: msg.description });
+      else toast.success(msg.title, { description: msg.description });
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Action failed.");
+      toast.error(`Couldn’t update ${label}`, { description: e instanceof Error ? e.message : "Action failed. Try again." });
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <span className="flex flex-col items-end gap-1">
-      <span className="flex flex-wrap items-center justify-end gap-2">
+    <span className="flex flex-wrap items-center justify-end gap-2">
         {!setupComplete && !retired && (
           <Link href={`/numbers/${id}?tab=setup`} className={secondary}>
             Setup
@@ -61,8 +65,6 @@ export function RowActions({
         <Link href={`/numbers/${id}?tab=actions`} className={primary} aria-label={`Manage ${label}`}>
           Manage
         </Link>
-      </span>
-      {error && <span className="text-legal text-error">{error}</span>}
     </span>
   );
 }

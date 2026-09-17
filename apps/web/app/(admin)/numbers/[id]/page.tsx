@@ -44,6 +44,7 @@ export default async function NumberDetailPage({ params, searchParams }: PagePro
   const eventRows = events.data ?? [];
   const panelDid: PanelDid = {
     id: did.id,
+    label: formatPhone(did.e164),
     lifecycle: did.lifecycle,
     manual_hold: did.manual_hold,
     manual_hold_reason: did.manual_hold_reason,

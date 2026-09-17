@@ -2,10 +2,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check } from "lucide-react";
+import { toast } from "sonner";
+import { describeAction } from "@/lib/action-messages";
 import { runNumberAction, setupChecklist, type ActionPayload, type NumberAction } from "@/lib/number-actions";
 
 export type PanelDid = {
   id: string;
+  /** Formatted phone number, used in toasts. */
+  label: string;
   lifecycle: string;
   manual_hold: boolean;
   manual_hold_reason: string | null;
@@ -23,44 +27,34 @@ const chip =
 const input =
   "min-h-11 w-full rounded-md border border-line-strong bg-surface px-3 text-caption text-ink placeholder:text-muted focus:border-ink focus:outline-none";
 
-type Message = { tone: "ok" | "error"; text: string } | null;
-
-function useNumberAction(didId: string) {
+/** Runs a number action and reports the outcome in a toast. */
+function useNumberAction(did: { id: string; label: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
-  const [message, setMessage] = useState<Message>(null);
 
-  async function run(key: string, action: NumberAction, payload: ActionPayload, success: string) {
+  async function run(key: string, action: NumberAction, payload: ActionPayload) {
     setBusy(key);
-    setMessage(null);
     try {
-      const r = await runNumberAction([didId], action, payload);
-      setMessage({ tone: "ok", text: r.changed ? success : "No change needed." });
+      const r = await runNumberAction([did.id], action, payload);
+      const msg = describeAction(action, payload, r, did.label);
+      if (msg.noop) toast.info(msg.title, { description: msg.description });
+      else toast.success(msg.title, { description: msg.description });
       router.refresh();
       return true;
     } catch (e) {
-      setMessage({ tone: "error", text: e instanceof Error ? e.message : "Action failed." });
+      toast.error(`Couldn’t update ${did.label}`, { description: e instanceof Error ? e.message : "Action failed. Try again." });
       return false;
     } finally {
       setBusy(null);
     }
   }
 
-  return { busy, message, run };
-}
-
-function StatusLine({ message }: { message: Message }) {
-  if (!message) return null;
-  return (
-    <p role="status" className={`text-caption ${message.tone === "ok" ? "text-success" : "text-error"}`}>
-      {message.text}
-    </p>
-  );
+  return { busy, run };
 }
 
 /** Setup as ordered steps: register, verify callback, confirm attestation, then optional CNAM. */
 export function SetupSteps({ did }: { did: PanelDid }) {
-  const { busy, message, run } = useNumberAction(did.id);
+  const { busy, run } = useNumberAction(did);
   const steps = setupChecklist(did);
   const requiredDone = steps.filter((s) => s.required).every((s) => s.done);
 
@@ -91,12 +85,12 @@ export function SetupSteps({ did }: { did: PanelDid }) {
             </span>
             <span className="shrink-0">
               {step.key === "fcr" && (
-                <button type="button" className={chip} disabled={busy !== null} onClick={() => run("fcr", "set_fcr", { value: !step.done }, step.done ? "Registration cleared." : "Marked registered.")}>
+                <button type="button" className={chip} disabled={busy !== null} onClick={() => run("fcr", "set_fcr", { value: !step.done })}>
                   {busy === "fcr" ? "Saving…" : step.done ? "Undo" : "Mark done"}
                 </button>
               )}
               {step.key === "callback" && (
-                <button type="button" className={chip} disabled={busy !== null} onClick={() => run("callback", "set_callback", { value: !step.done }, step.done ? "Callback marked not working." : "Callback verified.")}>
+                <button type="button" className={chip} disabled={busy !== null} onClick={() => run("callback", "set_callback", { value: !step.done })}>
                   {busy === "callback" ? "Saving…" : step.done ? "Undo" : "Mark done"}
                 </button>
               )}
@@ -107,7 +101,7 @@ export function SetupSteps({ did }: { did: PanelDid }) {
                     id={`attestation-${did.id}`}
                     value={did.attestation ?? ""}
                     disabled={busy !== null}
-                    onChange={(e) => run("attestation", "set_attestation", { value: e.target.value }, "Attestation saved.")}
+                    onChange={(e) => run("attestation", "set_attestation", { value: e.target.value })}
                     className="min-h-11 rounded-full border border-line bg-surface px-4 text-button text-ink"
                   >
                     <option value="">Unknown</option>
@@ -129,7 +123,6 @@ export function SetupSteps({ did }: { did: PanelDid }) {
             : "Setup complete."
           : "Finish the three required steps before this number starts warming up."}
       </div>
-      <StatusLine message={message} />
     </div>
   );
 }
@@ -138,7 +131,7 @@ type Pending = { action: NumberAction; title: string; body: string; requireReaso
 
 /** Hold/release, cool off, start warm-up and retire, each confirmed inline. */
 export function LifecycleActions({ did, setupComplete }: { did: PanelDid; setupComplete: boolean }) {
-  const { busy, message, run } = useNumberAction(did.id);
+  const { busy, run } = useNumberAction(did);
   const [pending, setPending] = useState<Pending | null>(null);
   const [reason, setReason] = useState("");
 
@@ -156,7 +149,7 @@ export function LifecycleActions({ did, setupComplete }: { did: PanelDid; setupC
       show: did.manual_hold,
       label: "Release hold",
       description: `Currently held${did.manual_hold_reason ? `: ${did.manual_hold_reason}` : ""}.`,
-      direct: () => void run("release", "release", {}, "Released from hold."),
+      direct: () => void run("release", "release", {}),
     },
     {
       show: canCool,
@@ -212,7 +205,7 @@ export function LifecycleActions({ did, setupComplete }: { did: PanelDid; setupC
           onSubmit={async (e) => {
             e.preventDefault();
             if (pending.requireReason && !reason.trim()) return;
-            const ok = await run(pending.action, pending.action, { reason: reason.trim() || undefined }, `${pending.confirm}: done.`);
+            const ok = await run(pending.action, pending.action, { reason: reason.trim() || undefined });
             if (ok) setPending(null);
           }}
         >
@@ -236,21 +229,20 @@ export function LifecycleActions({ did, setupComplete }: { did: PanelDid; setupC
           </div>
         </form>
       )}
-      <StatusLine message={message} />
     </div>
   );
 }
 
 /** Cap override, CNAM and notes. */
 export function DetailsForm({ did }: { did: PanelDid }) {
-  const { busy, message, run } = useNumberAction(did.id);
+  const { busy, run } = useNumberAction(did);
   const [cnam, setCnam] = useState(did.cnam ?? "");
   const [notes, setNotes] = useState(did.notes ?? "");
   const [cap, setCap] = useState(did.cap_override?.toString() ?? "");
 
   return (
     <div className="flex flex-col gap-5">
-      <form className="flex flex-col gap-1" onSubmit={(e) => { e.preventDefault(); void run("cap", "set_cap_override", { value: cap === "" ? null : Number(cap) }, cap === "" ? "Cap override removed." : "Cap override saved."); }}>
+      <form className="flex flex-col gap-1" onSubmit={(e) => { e.preventDefault(); void run("cap", "set_cap_override", { value: cap === "" ? null : Number(cap) }); }}>
         <label htmlFor={`cap-${did.id}`} className="text-caption text-graphite">
           Daily cap override <span className="text-muted">(lifecycle cap is {did.daily_cap})</span>
         </label>
@@ -259,7 +251,7 @@ export function DetailsForm({ did }: { did: PanelDid }) {
           <button type="submit" className={chip} disabled={busy !== null}>{busy === "cap" ? "Saving…" : "Save"}</button>
         </div>
       </form>
-      <form className="flex flex-col gap-1" onSubmit={(e) => { e.preventDefault(); void run("cnam", "set_cnam", { value: cnam }, "CNAM saved."); }}>
+      <form className="flex flex-col gap-1" onSubmit={(e) => { e.preventDefault(); void run("cnam", "set_cnam", { value: cnam }); }}>
         <label htmlFor={`cnam-${did.id}`} className="text-caption text-graphite">
           Caller name (CNAM, 15 characters)
         </label>
@@ -268,14 +260,13 @@ export function DetailsForm({ did }: { did: PanelDid }) {
           <button type="submit" className={chip} disabled={busy !== null}>{busy === "cnam" ? "Saving…" : "Save"}</button>
         </div>
       </form>
-      <form className="flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); void run("notes", "set_notes", { value: notes }, "Notes saved."); }}>
+      <form className="flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); void run("notes", "set_notes", { value: notes }); }}>
         <label htmlFor={`notes-${did.id}`} className="text-caption text-graphite">
           Notes
         </label>
         <textarea id={`notes-${did.id}`} rows={4} maxLength={500} className={`${input} py-2`} value={notes} onChange={(e) => setNotes(e.target.value)} />
         <button type="submit" className={`${chip} self-start`} disabled={busy !== null}>{busy === "notes" ? "Saving…" : "Save notes"}</button>
       </form>
-      <StatusLine message={message} />
     </div>
   );
 }

@@ -106,7 +106,7 @@ export default async function AlertsPage({ searchParams }: PageProps<"/alerts">)
                     </td>
                     <td className="tabular-nums">
                       {a.did_id && did ? (
-                        <Link href={`/numbers?id=${a.did_id}`} className="text-ink underline-offset-2 hover:underline">
+                        <Link href={`/numbers/${a.did_id}`} className="text-ink underline-offset-2 hover:underline">
                           {formatPhone(did.e164)}
                         </Link>
                       ) : (
@@ -123,7 +123,7 @@ export default async function AlertsPage({ searchParams }: PageProps<"/alerts">)
                       <>
                         <td>{a.severity === "critical" ? (a.emailed_at ? relative(a.emailed_at) : "Pending") : "In summary"}</td>
                         <td className="text-right">
-                          <ResolveButton id={a.id} />
+                          <ResolveButton id={a.id} label={alertKindLabel(a.kind)} />
                         </td>
                       </>
                     ) : (

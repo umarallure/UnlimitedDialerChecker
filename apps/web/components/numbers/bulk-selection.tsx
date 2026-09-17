@@ -2,6 +2,8 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
+import { toast } from "sonner";
+import { describeAction } from "@/lib/action-messages";
 import { runNumberAction, type ActionPayload, type NumberAction } from "@/lib/number-actions";
 
 type Ctx = { selected: Set<string>; toggle: (id: string) => void; setAll: (on: boolean) => void; ids: string[] };
@@ -55,20 +57,20 @@ export function BulkBar() {
   const router = useRouter();
   const { selected, setAll, ids } = useSelection();
   const [busy, setBusy] = useState<NumberAction | null>(null);
-  const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const count = selected.size;
   const allSelected = count > 0 && count === ids.length;
 
   async function run(item: (typeof BULK)[number]) {
     if (item.confirm && !window.confirm(item.confirm)) return;
     setBusy(item.action);
-    setMessage(null);
     try {
       const r = await runNumberAction([...selected], item.action, item.payload);
-      setMessage({ tone: "ok", text: `${item.label}: ${r.changed} of ${r.requested} updated.` });
+      const msg = describeAction(item.action, item.payload, r);
+      if (msg.noop) toast.info(msg.title, { description: msg.description });
+      else toast.success(msg.title, { description: msg.description });
       router.refresh();
     } catch (e) {
-      setMessage({ tone: "error", text: e instanceof Error ? e.message : "Action failed." });
+      toast.error(`Couldn’t apply “${item.label}” to ${selected.size} numbers`, { description: e instanceof Error ? e.message : "Nothing was changed. Try again." });
     } finally {
       setBusy(null);
     }
@@ -98,11 +100,6 @@ export function BulkBar() {
             <X aria-hidden className="size-4" /> Clear
           </button>
         </>
-      )}
-      {message && (
-        <span role="status" className={`text-caption ${message.tone === "ok" ? "text-success" : "text-error"}`}>
-          {message.text}
-        </span>
       )}
     </div>
   );
