@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, FileUp, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
 import { Alert, DataTable, Panel, PrimaryButton, SecondaryButton, StatusPill } from "@/components/ui";
 import { buildImport, MAX_IMPORT_ROWS, summarize, type ExistingDid, type ImportRow, type RowStatus } from "@/lib/import/numbers-csv";
 import { formatPhone } from "@/lib/time";
@@ -76,12 +77,18 @@ export function ImportForm({ existing }: { existing: ExistingDid[] }) {
       if (!res.ok) {
         const partial = body.inserted || body.updated ? ` (${body.inserted ?? 0} added, ${body.updated ?? 0} updated before it stopped)` : "";
         setServerError(`${body.error ?? `Import failed (HTTP ${res.status}).`}${partial}`);
+        toast.error("Import didn’t finish", { description: `${body.error ?? "Try again."}${partial}` });
       } else {
-        setResult(body as ImportResult);
+        const r = body as ImportResult;
+        setResult(r);
+        toast.success(`Imported ${r.inserted} new number${r.inserted === 1 ? "" : "s"}`, {
+          description: `${r.updated} updated${r.duplicate + r.invalid ? ` · ${r.duplicate + r.invalid} skipped` : ""} · from ${fileName ?? "pasted CSV"}`,
+        });
         router.refresh();
       }
     } catch {
       setServerError("Couldn’t reach the server. Check your connection and try again.");
+      toast.error("Import didn’t start", { description: "Couldn’t reach the server. Check your connection and try again." });
     } finally {
       setBusy(false);
     }

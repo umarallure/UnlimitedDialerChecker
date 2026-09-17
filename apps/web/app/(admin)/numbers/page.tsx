@@ -1,14 +1,13 @@
 import Link from "next/link";
-import { ChevronRight, Flame, Hash, Moon, PhoneOutgoing, Upload, X } from "lucide-react";
-import { Alert, DataTable, EmptyRow, KpiCard, PageHeader, Panel, PrimaryLink, StatusPill } from "@/components/ui";
+import { Flame, Hash, Moon, PhoneOutgoing, Upload, X } from "lucide-react";
 import { BulkBar, NumberSelection, RowCheckbox } from "@/components/numbers/bulk-selection";
-import { NumberActions } from "@/components/numbers/number-actions";
-import { alertKindLabel, severityTone } from "@/lib/alerts";
+import { RowActions } from "@/components/numbers/row-actions";
+import { Alert, DataTable, EmptyRow, KpiCard, PageHeader, Panel, PrimaryLink, StatusPill } from "@/components/ui";
 import { requireAdmin } from "@/lib/dal";
 import { setupProgress } from "@/lib/number-actions";
-import { LIFECYCLE_LABEL, LIFECYCLE_NOTE, LIFECYCLE_TONE } from "@/lib/status";
+import { LIFECYCLE_LABEL, LIFECYCLE_TONE } from "@/lib/status";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate, formatDateTime, formatPhone, relative } from "@/lib/time";
+import { formatPhone, relative } from "@/lib/time";
 
 const LIFECYCLES = ["NEW", "WARMING", "ACTIVE", "COOLING", "RETIRED"] as const;
 type Lifecycle = (typeof LIFECYCLES)[number];
@@ -24,13 +23,12 @@ export default async function NumbersPage({ searchParams }: PageProps<"/numbers"
   const params = await searchParams;
   const q = typeof params.q === "string" ? params.q.trim() : "";
   const lifecycle = typeof params.lifecycle === "string" && (LIFECYCLES as readonly string[]).includes(params.lifecycle) ? (params.lifecycle as Lifecycle) : null;
-  const selectedId = typeof params.id === "string" ? params.id : null;
 
   const supabase = await createClient();
   let query = supabase
     .from("dids")
     .select(
-      "id, e164, state, area_code, lifecycle, lifecycle_since, daily_cap, hourly_cap, manual_hold, manual_hold_reason, attestation, carrier, notes, purchased_at, fcr_registered_at, inbound_route_ok, cnam, cap_override, did_stats_live(calls_today, calls_last_hour, answered_today, short_calls_today, drops_today, last_call_at)",
+      "id, e164, state, area_code, lifecycle, lifecycle_since, daily_cap, hourly_cap, manual_hold, manual_hold_reason, attestation, carrier, fcr_registered_at, inbound_route_ok, cnam, cap_override, did_stats_live(calls_today, calls_last_hour, answered_today, short_calls_today, drops_today, last_call_at)",
     )
     .order("state", { nullsFirst: false })
     .order("e164");
@@ -49,22 +47,6 @@ export default async function NumbersPage({ searchParams }: PageProps<"/numbers"
   const countOf = (l: Lifecycle) => pool.filter((d) => d.lifecycle === l).length;
   const callsToday = pool.reduce((n, d) => n + (first(d.did_stats_live as LiveStats | LiveStats[])?.calls_today ?? 0), 0);
   const held = pool.filter((d) => d.manual_hold).length;
-
-  const selected = rows.find((r) => r.id === selectedId) ?? rows[0];
-  const [events, didAlerts] = selected
-    ? await Promise.all([
-        supabase.from("did_state_events").select("id, from_state, to_state, reason, actor, dry_run, created_at").eq("did_id", selected.id).order("created_at", { ascending: false }).limit(10),
-        supabase.from("alerts").select("id, kind, severity, message").eq("did_id", selected.id).is("resolved_at", null).order("severity", { ascending: false }),
-      ])
-    : [null, null];
-
-  const hrefWith = (next: Record<string, string | null>) => {
-    const sp = new URLSearchParams();
-    const merged = { q: q || null, lifecycle, id: selectedId, ...next };
-    for (const [k, v] of Object.entries(merged)) if (v) sp.set(k, v);
-    const s = sp.toString();
-    return s ? `/numbers?${s}` : "/numbers";
-  };
 
   return (
     <>
@@ -126,200 +108,70 @@ export default async function NumbersPage({ searchParams }: PageProps<"/numbers"
         </div>
       )}
 
-      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <Panel bodyClassName="p-0">
+      <Panel bodyClassName="p-0">
           <NumberSelection ids={rows.map((r) => r.id)}>
-          <BulkBar />
-          <DataTable head={["", "Number", "Lifecycle", "Setup", "Calls today / cap", "Answered", "Last call", ""]} minWidth={860} bare>
-            {rows.length === 0 ? (
-              <EmptyRow colSpan={8}>{q || lifecycle ? "No numbers match these filters." : "No numbers yet. Use Import numbers to add your Teleinx DIDs."}</EmptyRow>
-            ) : (
-              rows.map((d) => {
-                const live = first(d.did_stats_live as LiveStats | LiveStats[]);
-                const calls = live?.calls_today ?? 0;
-                const usage = (d.cap_override ?? d.daily_cap) > 0 ? Math.min(calls / (d.cap_override ?? d.daily_cap), 1) : 0;
-                const isSelected = selected?.id === d.id;
-                const setup = setupProgress(d);
-                const cap = d.cap_override ?? d.daily_cap;
-                return (
-                  <tr key={d.id} className={`relative ${isSelected ? "bg-surface-alt" : "hover:bg-surface-alt"}`}>
-                    <td className={`w-12 !px-2 ${isSelected ? "shadow-[inset_3px_0_0_var(--color-primary)]" : ""}`}>
-                      <RowCheckbox id={d.id} label={formatPhone(d.e164)} />
-                    </td>
-                    <td>
-                      <Link href={hrefWith({ id: d.id })} className="flex flex-col after:absolute after:inset-0" aria-current={isSelected ? "true" : undefined}>
-                        <span className="font-semibold text-ink tabular-nums">{formatPhone(d.e164)}</span>
-                        <span className="text-legal text-muted">
-                          {d.state ?? "Unknown state"} · {d.area_code}
+            <BulkBar />
+            <DataTable head={["", "Number", "Lifecycle", "Setup", "Calls today / cap", "Answered", "Last call", "Actions"]} minWidth={1160} alignRight={[7]} bare>
+              {rows.length === 0 ? (
+                <EmptyRow colSpan={8}>{q || lifecycle ? "No numbers match these filters." : "No numbers yet. Use Import numbers to add your Teleinx DIDs."}</EmptyRow>
+              ) : (
+                rows.map((d) => {
+                  const live = first(d.did_stats_live as LiveStats | LiveStats[]);
+                  const calls = live?.calls_today ?? 0;
+                  const cap = d.cap_override ?? d.daily_cap;
+                  const usage = cap > 0 ? Math.min(calls / cap, 1) : 0;
+                  const setup = setupProgress(d);
+                  return (
+                    <tr key={d.id} className="relative hover:bg-surface-alt">
+                      <td className="w-12 !px-2">
+                        <RowCheckbox id={d.id} label={formatPhone(d.e164)} />
+                      </td>
+                      <td>
+                        <Link href={`/numbers/${d.id}`} className="flex flex-col after:absolute after:inset-0">
+                          <span className="font-semibold text-ink tabular-nums">{formatPhone(d.e164)}</span>
+                          <span className="text-legal text-muted">
+                            {d.state ?? "Unknown state"} · {d.area_code}
+                          </span>
+                        </Link>
+                      </td>
+                      <td>
+                        <span className="flex flex-wrap gap-1">
+                          <StatusPill tone={LIFECYCLE_TONE[d.lifecycle]}>{LIFECYCLE_LABEL[d.lifecycle]}</StatusPill>
+                          {d.manual_hold && <StatusPill tone="error">Held</StatusPill>}
                         </span>
-                      </Link>
-                    </td>
-                    <td>
-                      <span className="flex flex-wrap gap-1">
-                        <StatusPill tone={LIFECYCLE_TONE[d.lifecycle]}>{LIFECYCLE_LABEL[d.lifecycle]}</StatusPill>
-                        {d.manual_hold && <StatusPill tone="error">Held</StatusPill>}
-                      </span>
-                    </td>
-                    <td>
-                      <StatusPill tone={setup.done === setup.total ? "success" : "neutral"}>
-                        {setup.done}/{setup.total}
-                      </StatusPill>
-                    </td>
-                    <td>
-                      <span className="flex items-center gap-3">
-                        <span className="tabular-nums">
-                          {calls} / {cap}
-                          {d.cap_override !== null && <span className="text-muted">*</span>}
+                      </td>
+                      <td>
+                        <StatusPill tone={setup.done === setup.total ? "success" : "neutral"}>
+                          {setup.done}/{setup.total}
+                        </StatusPill>
+                      </td>
+                      <td>
+                        <span className="flex items-center gap-3">
+                          <span className="tabular-nums">
+                            {calls} / {cap}
+                            {d.cap_override !== null && <span className="text-muted">*</span>}
+                          </span>
+                          <span aria-hidden className="h-1.5 w-20 overflow-hidden rounded-full bg-line">
+                            <span className={`block h-full rounded-full ${usage >= 1 ? "bg-error" : usage >= 0.8 ? "bg-warning" : "bg-success"}`} style={{ width: `${usage * 100}%` }} />
+                          </span>
                         </span>
-                        <span aria-hidden className="h-1.5 w-20 overflow-hidden rounded-full bg-line">
-                          <span
-                            className={`block h-full rounded-full ${usage >= 1 ? "bg-error" : usage >= 0.8 ? "bg-warning" : "bg-success"}`}
-                            style={{ width: `${usage * 100}%` }}
-                          />
-                        </span>
-                      </span>
-                    </td>
-                    <td className="tabular-nums">
-                      {live?.answered_today ?? 0}
-                      {calls > 0 && <span className="text-muted"> · {Math.round(((live?.answered_today ?? 0) / calls) * 100)}%</span>}
-                    </td>
-                    <td className="tabular-nums">{relative(live?.last_call_at ?? null)}</td>
-                    <td className="w-10 text-right">
-                      <ChevronRight aria-hidden className="ml-auto size-5 text-graphite" />
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </DataTable>
+                      </td>
+                      <td className="tabular-nums">
+                        {live?.answered_today ?? 0}
+                        {calls > 0 && <span className="text-muted"> · {Math.round(((live?.answered_today ?? 0) / calls) * 100)}%</span>}
+                      </td>
+                      <td className="tabular-nums">{relative(live?.last_call_at ?? null)}</td>
+                      <td className="text-right">
+                        <RowActions id={d.id} label={formatPhone(d.e164)} held={d.manual_hold} retired={d.lifecycle === "RETIRED"} setupComplete={setup.done === setup.total} />
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </DataTable>
           </NumberSelection>
         </Panel>
-
-        {selected && (
-          <aside className="rounded-lg border border-line bg-surface p-6 xl:sticky xl:top-0">
-            {(() => {
-              const live = first(selected.did_stats_live as LiveStats | LiveStats[]);
-              const rate = live?.calls_today ? Math.round((live.answered_today / live.calls_today) * 100) : null;
-              const fields: Array<[string, React.ReactNode]> = [
-                ["Lifecycle", <StatusPill key="l" tone={LIFECYCLE_TONE[selected.lifecycle]}>{LIFECYCLE_LABEL[selected.lifecycle]}</StatusPill>],
-                ["In state since", formatDate(selected.lifecycle_since)],
-                ["Caps", `${selected.cap_override ?? selected.daily_cap}/day${selected.cap_override !== null ? " (override)" : ""} · ${selected.hourly_cap}/hour`],
-                ["Carrier", selected.carrier],
-              ];
-              const eventRows = events?.data ?? [];
-              return (
-                <div className="flex flex-col gap-6">
-                  <div className="flex flex-col gap-1">
-                    <h2 className="text-title-md font-bold text-ink tabular-nums">{formatPhone(selected.e164)}</h2>
-                    <p className="text-caption text-muted">
-                      {selected.state ?? "Unknown state"} · Area code {selected.area_code}
-                    </p>
-                  </div>
-
-                  <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-caption">
-                    {fields.map(([k, v]) => (
-                      <div key={k} className="contents">
-                        <dt className="text-muted">{k}</dt>
-                        <dd className="text-ink">{v}</dd>
-                      </div>
-                    ))}
-                  </dl>
-
-                  <div className="grid grid-cols-3 gap-2 border-y border-line py-4 text-center">
-                    <Stat label="Calls" value={live?.calls_today ?? 0} />
-                    <Stat label="Answer" value={rate === null ? "—" : `${rate}%`} />
-                    <Stat label="Short" value={live?.short_calls_today ?? 0} />
-                  </div>
-
-                  <div className="flex flex-col gap-4">
-                    <h3 className="text-title-sm font-bold text-ink">Lifecycle timeline</h3>
-                    {eventRows.length === 0 ? (
-                      <p className="text-caption text-muted">No state changes yet. {LIFECYCLE_NOTE[selected.lifecycle]}.</p>
-                    ) : (
-                      <ol className="flex flex-col">
-                        {eventRows.map((e, i) => (
-                          <li key={e.id} className="relative flex gap-3 pb-5 last:pb-0">
-                            {i < eventRows.length - 1 && <span aria-hidden className="absolute top-6 bottom-0 left-[9px] w-px bg-line" />}
-                            <span aria-hidden className={`mt-0.5 size-[19px] shrink-0 rounded-full border-2 ${e.dry_run ? "border-line-strong bg-surface" : "border-success bg-success"}`} />
-                            <span className="flex flex-col gap-0.5">
-                              <span className="text-legal text-muted">{formatDateTime(e.created_at)}</span>
-                              <span className="text-caption font-semibold text-ink">
-                                {e.from_state === e.to_state ? LIFECYCLE_LABEL[e.to_state] : `${LIFECYCLE_LABEL[e.from_state ?? ""] ?? "Added"} → ${LIFECYCLE_LABEL[e.to_state]}`}
-                                {e.dry_run ? " (dry run)" : ""}
-                              </span>
-                              <span className="text-caption text-muted">
-                                {e.reason}
-                                {e.actor && e.actor !== "agent" ? ` · ${e.actor}` : ""}
-                              </span>
-                            </span>
-                          </li>
-                        ))}
-                      </ol>
-                    )}
-                  </div>
-
-                  {(didAlerts?.data ?? []).length > 0 && (
-                    <div className="flex flex-col gap-2">
-                      <h3 className="text-title-sm font-bold text-ink">Open alerts</h3>
-                      {(didAlerts?.data ?? []).map((a) => (
-                        <Link key={a.id} href="/alerts" className="flex flex-col gap-1 rounded-lg border border-line p-3 hover:shadow-card-hover">
-                          <StatusPill tone={severityTone(a.severity)}>{alertKindLabel(a.kind)}</StatusPill>
-                          <span className="text-caption text-graphite">{a.message}</span>
-                        </Link>
-                      ))}
-                    </div>
-                  )}
-
-                  <NumberActions
-                    key={selected.id}
-                    did={{
-                      id: selected.id,
-                      lifecycle: selected.lifecycle,
-                      manual_hold: selected.manual_hold,
-                      manual_hold_reason: selected.manual_hold_reason,
-                      fcr_registered_at: selected.fcr_registered_at,
-                      inbound_route_ok: selected.inbound_route_ok,
-                      attestation: selected.attestation,
-                      cnam: selected.cnam,
-                      notes: selected.notes,
-                      cap_override: selected.cap_override,
-                      daily_cap: selected.daily_cap,
-                    }}
-                  />
-
-                  <div className="rounded-lg bg-surface-alt p-4">
-                    <p className="text-caption text-graphite">Next step</p>
-                    <p className="mt-1 text-caption font-semibold text-ink">{nextStep(selected)}</p>
-                    {selected.notes && <p className="mt-2 text-legal text-muted">{selected.notes}</p>}
-                  </div>
-                </div>
-              );
-            })()}
-          </aside>
-        )}
-      </div>
     </>
   );
 }
 
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-title-sm font-bold tabular-nums text-ink">{value}</span>
-      <span className="text-legal text-muted">{label}</span>
-    </div>
-  );
-}
-
-function nextStep(d: { lifecycle: string; fcr_registered_at: string | null; inbound_route_ok: boolean; attestation: string | null; manual_hold: boolean }) {
-  if (d.manual_hold) return "Held manually. Release it when the issue is resolved.";
-  if (d.lifecycle === "NEW") {
-    if (!d.fcr_registered_at) return "Register on Free Caller Registry before first use.";
-    if (!d.inbound_route_ok) return "Verify callbacks reach the IVR.";
-    return "Waiting for 7 days of aging and a clean reputation scan.";
-  }
-  if (d.attestation && d.attestation !== "A") return "Not A-attested. Replace with a Teleinx DID.";
-  if (d.lifecycle === "COOLING") return "Resting. Scan reputation before it returns to warm-up.";
-  if (d.lifecycle === "RETIRED") return "Keep routing callbacks for 90 days, then release.";
-  return "Healthy. Keep usage under the daily cap.";
-}

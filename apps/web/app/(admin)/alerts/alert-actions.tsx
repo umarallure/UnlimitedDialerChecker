@@ -2,59 +2,62 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 
-export function ResolveButton({ id }: { id: number }) {
+export function ResolveButton({ id, label }: { id: number; label: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   async function resolve() {
     setBusy(true);
-    setError(null);
-    const res = await fetch(`/api/alerts/${id}/resolve`, { method: "POST" });
-    const body = await res.json().catch(() => ({}));
+    const res = await fetch(`/api/alerts/${id}/resolve`, { method: "POST" }).catch(() => null);
+    const body = res ? await res.json().catch(() => ({})) : {};
     setBusy(false);
-    if (!res.ok && res.status !== 409) setError(body.error ?? "Couldn’t resolve.");
-    else router.refresh();
+    if (res?.ok) {
+      toast.success(`Alert resolved: ${label}`, { description: "If the problem continues, the next health check opens a new alert." });
+      router.refresh();
+    } else if (res?.status === 409) {
+      toast.info("Already resolved", { description: label });
+      router.refresh();
+    } else {
+      toast.error("Couldn’t resolve the alert", { description: body.error ?? "Check your connection and try again." });
+    }
   }
 
   return (
-    <span className="flex flex-col items-end gap-1">
-      <button
+    <button
         type="button"
         onClick={resolve}
         disabled={busy}
         className="inline-flex min-h-11 items-center rounded-full border border-line bg-surface px-4 text-button text-ink hover:border-line-strong disabled:opacity-60"
       >
         {busy ? "Resolving…" : "Resolve"}
-      </button>
-      {error && <span className="text-legal text-error">{error}</span>}
-    </span>
+    </button>
   );
 }
 
 export function RunChecksButton() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
 
   async function run() {
     setBusy(true);
-    setResult(null);
-    const res = await fetch("/api/alerts/run", { method: "POST" });
-    const body = await res.json().catch(() => ({}));
+    const res = await fetch("/api/alerts/run", { method: "POST" }).catch(() => null);
+    const body = res ? await res.json().catch(() => ({})) : {};
     setBusy(false);
-    if (!res.ok) setResult(body.error ?? "Checks failed to run.");
-    else {
-      setResult(`${body.opened ?? 0} opened · ${body.resolved ?? 0} resolved · ${body.refreshed ?? 0} still open`);
-      router.refresh();
+    if (!res?.ok) {
+      toast.error("Health checks didn’t run", { description: body.error ?? "Check your connection and try again." });
+      return;
     }
+    const opened = body.opened ?? 0;
+    const description = `${opened} opened · ${body.resolved ?? 0} resolved · ${body.refreshed ?? 0} still open`;
+    if (opened) toast.warning(`${opened} new alert${opened === 1 ? "" : "s"}`, { description });
+    else toast.success("Health checks complete", { description });
+    router.refresh();
   }
 
   return (
-    <span className="flex flex-wrap items-center gap-3">
-      {result && <span className="text-caption text-muted">{result}</span>}
-      <button
+    <button
         type="button"
         onClick={run}
         disabled={busy}
@@ -62,7 +65,6 @@ export function RunChecksButton() {
       >
         <RefreshCw aria-hidden className={`size-4 ${busy ? "animate-spin motion-reduce:animate-none" : ""}`} />
         {busy ? "Checking…" : "Run checks now"}
-      </button>
-    </span>
+    </button>
   );
 }
