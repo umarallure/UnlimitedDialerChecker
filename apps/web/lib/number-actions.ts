@@ -47,3 +47,18 @@ export async function runNumberAction(ids: string[], action: NumberAction, paylo
   if (!res.ok) throw new Error(body.error ?? `Action failed (HTTP ${res.status}).`);
   return body as { action: NumberAction; changed: number; requested: number };
 }
+
+/** One-line guidance for the most useful thing to do with a number next. */
+export function nextStep(d: SetupFields & { lifecycle: string; manual_hold: boolean }) {
+  if (d.manual_hold) return "Held manually. Release it when the issue is resolved.";
+  if (d.lifecycle === "NEW") {
+    if (!d.fcr_registered_at) return "Register on Free Caller Registry before first use.";
+    if (!d.inbound_route_ok) return "Verify callbacks reach the IVR.";
+    if (d.attestation !== "A") return "Confirm A-level attestation with Teleinx.";
+    return "Setup complete. Waiting for 7 days of aging and a clean reputation scan.";
+  }
+  if (d.attestation && d.attestation !== "A") return "Not A-attested. Replace with a Teleinx DID.";
+  if (d.lifecycle === "COOLING") return "Resting. Scan reputation before it returns to warm-up.";
+  if (d.lifecycle === "RETIRED") return "Keep routing callbacks for 90 days, then release.";
+  return "Healthy. Keep usage under the daily cap.";
+}
