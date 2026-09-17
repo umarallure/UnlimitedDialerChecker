@@ -11,3 +11,6 @@ coverage/
 .vercel
 supabase/.temp/
 supabase/.branches/
+
+# Server details, IPs and phone numbers: never commit (public repo)
+docs/private/
