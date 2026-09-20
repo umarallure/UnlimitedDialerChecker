@@ -5,7 +5,7 @@ import { Modal } from "@/components/modal";
 import { NewAgentForm } from "./new-agent-form";
 
 /** Opens the agent form in a dialog, so the page stays a list of who exists. */
-export function AddAgentButton({ nextListId }: { nextListId: number }) {
+export function AddAgentButton({ nextListId, takenCampaigns }: { nextListId: number; takenCampaigns: string[] }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -20,7 +20,7 @@ export function AddAgentButton({ nextListId }: { nextListId: number }) {
       </button>
 
       <Modal open={open} onClose={() => setOpen(false)} title="Add an agent" description="Account, campaign and list in one go.">
-        <NewAgentForm nextListId={nextListId} onDone={() => setOpen(false)} />
+        <NewAgentForm nextListId={nextListId} takenCampaigns={takenCampaigns} onDone={() => setOpen(false)} />
       </Modal>
     </>
   );

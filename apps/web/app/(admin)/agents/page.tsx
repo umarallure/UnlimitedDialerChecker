@@ -23,6 +23,8 @@ export default async function AgentsPage() {
   ]);
 
   const highest = (lists ?? []).reduce((n, l) => Math.max(n, l.list_id), 300);
+  // So a suggested campaign id cannot collide with one that already exists.
+  const takenCampaigns = [...new Set((lists ?? []).map((l) => l.campaign_id).filter((c): c is string => Boolean(c)))];
   const allowedByGroup = new Map((groups ?? []).map((g) => [g.user_group, campaignsFor(g.allowed_campaigns)]));
 
   const listsByCampaign = new Map<string, { list_id: number; leads: number }[]>();
@@ -36,7 +38,7 @@ export default async function AgentsPage() {
       <PageHeader
         title="Agents"
         description="VICIdial agent states, synced from the dialer every 15 minutes."
-        action={<AddAgentButton nextListId={highest + 1} />}
+        action={<AddAgentButton nextListId={highest + 1} takenCampaigns={takenCampaigns} />}
       />
       <AgentsBoard />
 

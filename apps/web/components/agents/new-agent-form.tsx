@@ -8,17 +8,29 @@ type Step = { step: string; ok: boolean; detail?: string };
 
 const control = "h-11 w-full rounded-md border border-line-strong bg-surface px-3 text-caption text-ink focus:border-ink focus:outline-none";
 
-/** Campaign ids are capitals, numbers and underscore, 8 characters at most. */
-function campaignIdFor(user: string): string {
+/**
+ * Suggest a campaign id: capitals, numbers and underscore, 8 characters at most.
+ *
+ * Truncating the front would collide for names that differ only at the end — "agent1" and
+ * "agent2" both become AG_AGENT — so the tail is kept, and anything still taken gets a number.
+ */
+function campaignIdFor(user: string, taken: string[] = []): string {
   const base = user.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  return `AG_${base}`.slice(0, 8);
+  const candidate = `AG_${base.length > 5 ? base.slice(-5) : base}`;
+  if (!taken.includes(candidate)) return candidate;
+
+  for (let n = 2; n < 100; n++) {
+    const next = `${candidate.slice(0, 8 - String(n).length)}${n}`;
+    if (!taken.includes(next)) return next;
+  }
+  return candidate;
 }
 
 /**
  * Creates an agent with everything they need: their own campaign, their own list, and a user
  * group that admits them to that campaign alone.
  */
-export function NewAgentForm({ nextListId, onDone }: { nextListId: number; onDone?: () => void }) {
+export function NewAgentForm({ nextListId, takenCampaigns = [], onDone }: { nextListId: number; takenCampaigns?: string[]; onDone?: () => void }) {
   const router = useRouter();
   const [user, setUser] = useState("");
   const [fullName, setFullName] = useState("");
@@ -28,7 +40,7 @@ export function NewAgentForm({ nextListId, onDone }: { nextListId: number; onDon
   const [busy, setBusy] = useState(false);
   const [steps, setSteps] = useState<Step[] | null>(null);
 
-  const effectiveCampaign = campaignId || campaignIdFor(user);
+  const effectiveCampaign = campaignId || campaignIdFor(user, takenCampaigns);
 
   async function create() {
     setBusy(true);
@@ -113,7 +125,7 @@ export function NewAgentForm({ nextListId, onDone }: { nextListId: number; onDon
 
         <label className="flex flex-col gap-1">
           <span className="text-caption text-graphite">Campaign id</span>
-          <input className={control} value={campaignId} onChange={(e) => setCampaignId(e.target.value.toUpperCase())} placeholder={user ? campaignIdFor(user) : "AG_A4"} />
+          <input className={control} value={campaignId} onChange={(e) => setCampaignId(e.target.value.toUpperCase())} placeholder={user ? campaignIdFor(user, takenCampaigns) : "AG_AGENT"} />
           <span className="text-legal text-muted">Capitals and numbers, 8 characters at most.</span>
         </label>
 
