@@ -151,8 +151,14 @@ export async function syncCampaignDays(db: SupabaseClient, pool: Pool, days = 7)
   return rows.length;
 }
 
-/** Lists and users, mirrored so the app can offer real choices in a form. */
-export async function syncReferenceData(db: SupabaseClient, pool: Pool): Promise<{ lists: number; users: number }> {
+/**
+ * Lists, users and user groups, mirrored so the app can offer real choices in a form.
+ *
+ * This is a mirror, not an archive: a row deleted on the dialer is deleted here too. An
+ * upsert-only sync leaves agents and lists on screen long after they are gone, which is worse
+ * than showing nothing.
+ */
+export async function syncReferenceData(db: SupabaseClient, pool: Pool): Promise<{ lists: number; users: number; groups: number; removed: number }> {
   const [listRows] = await pool.query<RowDataPacket[]>(
     `SELECT l.list_id, l.list_name, l.campaign_id, l.active,
             (SELECT COUNT(*) FROM vicidial_list v WHERE v.list_id = l.list_id) AS leads
@@ -160,6 +166,9 @@ export async function syncReferenceData(db: SupabaseClient, pool: Pool): Promise
   );
   const [userRows] = await pool.query<RowDataPacket[]>(
     "SELECT user_id, user, full_name, user_level, user_group, active FROM vicidial_users",
+  );
+  const [groupRows] = await pool.query<RowDataPacket[]>(
+    "SELECT user_group, group_name, allowed_campaigns FROM vicidial_user_groups",
   );
 
   const now = new Date().toISOString();
@@ -194,5 +203,33 @@ export async function syncReferenceData(db: SupabaseClient, pool: Pool): Promise
     if (error) throw new Error(`sync users: ${error.message}`);
   }
 
-  return { lists: listRows.length, users: userRows.length };
+  if (groupRows.length) {
+    const { error } = await db.from("dialer_user_groups").upsert(
+      groupRows.map((r) => ({
+        user_group: String(r.user_group),
+        group_name: r.group_name ?? null,
+        allowed_campaigns: r.allowed_campaigns ?? null,
+        synced_at: now,
+      })),
+      { onConflict: "user_group" },
+    );
+    if (error) throw new Error(`sync user groups: ${error.message}`);
+  }
+
+  // Remove what the dialer no longer has. Guarded on a non-empty read, so a query that returned
+  // nothing because of a permissions problem cannot empty the mirror.
+  let removed = 0;
+  const prune = async (table: string, column: string, keep: Array<string | number>) => {
+    if (keep.length === 0) return;
+    const list = keep.map((v) => `"${String(v).replace(/"/g, '\\"')}"`).join(",");
+    const { data, error } = await db.from(table).delete().not(column, "in", `(${list})`).select(column);
+    if (error) throw new Error(`prune ${table}: ${error.message}`);
+    removed += data?.length ?? 0;
+  };
+
+  await prune("dialer_lists", "list_id", listRows.map((r) => Number(r.list_id)));
+  await prune("dialer_users", "user_id", userRows.map((r) => Number(r.user_id)));
+  await prune("dialer_user_groups", "user_group", groupRows.map((r) => String(r.user_group)));
+
+  return { lists: listRows.length, users: userRows.length, groups: groupRows.length, removed };
 }
