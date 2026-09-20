@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Pool } from "mysql2/promise";
 import type { Config } from "./config";
 import { VicidialApi } from "./vicidial-api";
 
@@ -26,10 +27,18 @@ export type CommandRow = {
   import_id: string | null;
 };
 
-export type CommandOutcome = { ok: boolean; result: Record<string, unknown> };
+export type CommandOutcome = {
+  ok: boolean;
+  result: Record<string, unknown>;
+  /**
+   * False when trying again cannot help: a plan that breaks a rule is refused the same way
+   * every time, so retrying it only fills the log and delays the real answer.
+   */
+  retryable?: boolean;
+};
 
 /** Run one command. Unknown types fail loudly rather than silently succeeding. */
-async function execute(cmd: CommandRow, api: VicidialApi | null): Promise<CommandOutcome> {
+async function execute(cmd: CommandRow, api: VicidialApi | null, pool: Pool): Promise<CommandOutcome> {
   switch (cmd.type) {
     case "api_ping": {
       if (!api) return { ok: false, result: { error: "No VICIdial API credentials configured on the dialer" } };
@@ -52,11 +61,15 @@ async function execute(cmd: CommandRow, api: VicidialApi | null): Promise<Comman
       if (!api) return { ok: false, result: { error: "No VICIdial API credentials configured on the dialer" } };
       return addLeads(cmd, api);
     }
+    case "update_campaign": {
+      if (!api) return { ok: false, result: { error: "No VICIdial API credentials configured on the dialer" } };
+      return updateCampaign(cmd, api, pool);
+    }
     case "resync":
       // Handled by the sync loops; queuing it just marks the request.
       return { ok: true, result: { note: "Sync loops run on their own schedule" } };
     default:
-      return { ok: false, result: { error: `This dialer agent does not implement "${cmd.type}"` } };
+      return { ok: false, retryable: false, result: { error: `This dialer agent does not implement "${cmd.type}"` } };
   }
 }
 
@@ -95,7 +108,7 @@ type AddLeadsPayload = {
 async function addLeads(cmd: CommandRow, api: VicidialApi): Promise<CommandOutcome> {
   const p = cmd.payload as unknown as AddLeadsPayload;
   if (!p?.listId || !Array.isArray(p.leads) || p.leads.length === 0) {
-    return { ok: false, result: { error: "Nothing to import: the command has no leads or no list" } };
+    return { ok: false, retryable: false, result: { error: "Nothing to import: the command has no leads or no list" } };
   }
 
   const rows: Array<{ phone: string; ok: boolean; leadId?: number; duplicate?: boolean; error?: string }> = [];
@@ -146,11 +159,112 @@ async function addLeads(cmd: CommandRow, api: VicidialApi): Promise<CommandOutco
   return { ok: !(added === 0 && failed > 0), result: { added, duplicates, failed, rows } };
 }
 
+type UpdateCampaignPayload = {
+  campaignId: string;
+  // Settings update_campaign accepts.
+  dialMethod?: string;
+  linesPerAgent?: number;
+  maxLinesPerAgent?: number;
+  hopperLevel?: number;
+  dialTimeoutSec?: number;
+  campaignCid?: string;
+  active?: boolean;
+  // Settings the API has no parameter for, written straight to the column instead.
+  maxDropPct?: number;
+  dropCallSeconds?: number;
+  availableOnlyTally?: boolean;
+  recording?: string;
+  ownerOnly?: boolean;
+};
+
+/** The only columns this agent may write. Matches the column-level grant on the database, so a
+ *  mistake here fails on the grant rather than changing something it should not. */
+const DIRECT_COLUMNS: Record<string, string> = {
+  maxDropPct: "adaptive_dropped_percentage",
+  dropCallSeconds: "drop_call_seconds",
+  availableOnlyTally: "available_only_ratio_tally",
+  recording: "campaign_recording",
+  ownerOnly: "agent_dial_owner_only",
+};
+
+/** The Telemarketing Sales Rule cap. Checked again here: the app validates before queuing, but
+ *  a queued command is a message, and a message can be wrong or old. */
+const ABANDON_CAP_PCT = 3;
+
+/**
+ * Applies a campaign's dialing settings.
+ *
+ * Two routes, because VICIdial's API covers only part of a campaign: pacing goes through
+ * update_campaign, and the five settings it has no parameter for are written to their columns
+ * directly, under a grant that covers those columns and nothing else.
+ */
+async function updateCampaign(cmd: CommandRow, api: VicidialApi, pool: Pool): Promise<CommandOutcome> {
+  const p = cmd.payload as unknown as UpdateCampaignPayload;
+  if (!p?.campaignId) return { ok: false, retryable: false, result: { error: "No campaign was named" } };
+
+  if (p.maxDropPct !== undefined && p.maxDropPct > ABANDON_CAP_PCT) {
+    return { ok: false, retryable: false, result: { error: `Refused: ${p.maxDropPct}% abandoned calls is above the ${ABANDON_CAP_PCT}% daily limit` } };
+  }
+  if (p.dialMethod === "MANUAL" && (p.linesPerAgent ?? 0) > 1) {
+    return { ok: false, retryable: false, result: { error: "Refused: manual dialing cannot run several lines per agent" } };
+  }
+
+  const viaApi: Record<string, string | number | undefined> = {
+    campaign_id: p.campaignId,
+    dial_method: p.dialMethod,
+    auto_dial_level: p.linesPerAgent,
+    adaptive_maximum_level: p.maxLinesPerAgent,
+    hopper_level: p.hopperLevel,
+    dial_timeout: p.dialTimeoutSec,
+    campaign_cid: p.campaignCid,
+    active: p.active === undefined ? undefined : p.active ? "Y" : "N",
+  };
+  const sent = Object.entries(viaApi)
+    .filter(([k, v]) => k !== "campaign_id" && v !== undefined)
+    .map(([k]) => k);
+
+  if (sent.length > 0) {
+    const res = await api.call("update_campaign", viaApi);
+    if (!res.ok) return { ok: false, result: { error: res.error, step: "update_campaign" } };
+  }
+
+  const sets: string[] = [];
+  const values: Array<string | number> = [];
+  const direct: string[] = [];
+
+  for (const [field, column] of Object.entries(DIRECT_COLUMNS)) {
+    const value = (p as Record<string, unknown>)[field];
+    if (value === undefined) continue;
+    sets.push(`${column} = ?`);
+    values.push(typeof value === "boolean" ? (value ? "Y" : "N") : (value as string | number));
+    direct.push(column);
+  }
+
+  if (sets.length > 0) {
+    values.push(p.campaignId);
+    try {
+      await pool.execute(`UPDATE vicidial_campaigns SET ${sets.join(", ")} WHERE campaign_id = ?`, values);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        result: {
+          error: /command denied/i.test(message) ? `The agent may not write ${direct.join(", ")}. Grant UPDATE on those columns.` : message,
+          step: "direct columns",
+          appliedViaApi: sent,
+        },
+      };
+    }
+  }
+
+  return { ok: true, result: { campaignId: p.campaignId, viaApi: sent, viaColumns: direct } };
+}
+
 /**
  * Claim and run whatever is waiting. Returns how many were handled, so the caller can stay
  * quiet on an idle queue.
  */
-export async function processCommands(db: SupabaseClient, cfg: Config, log: (msg: string) => void): Promise<number> {
+export async function processCommands(db: SupabaseClient, pool: Pool, cfg: Config, log: (msg: string) => void): Promise<number> {
   // Free anything a previous run claimed and never finished.
   await db
     .from("commands")
@@ -184,13 +298,13 @@ export async function processCommands(db: SupabaseClient, cfg: Config, log: (msg
     const cmd = row as CommandRow;
     let outcome: CommandOutcome;
     try {
-      outcome = await execute(cmd, api);
+      outcome = await execute(cmd, api, pool);
     } catch (err) {
       outcome = { ok: false, result: { error: err instanceof Error ? err.message : String(err) } };
     }
 
     const attempts = row.attempts + 1;
-    const retryable = !outcome.ok && attempts < MAX_ATTEMPTS;
+    const retryable = !outcome.ok && outcome.retryable !== false && attempts < MAX_ATTEMPTS;
 
     await db
       .from("commands")

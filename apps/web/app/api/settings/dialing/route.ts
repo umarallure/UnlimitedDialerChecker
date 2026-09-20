@@ -13,6 +13,8 @@ const Body = z.object({
   dropCallSeconds: z.number().int().min(1).max(20),
   hopperLevel: z.number().int().min(1).max(2000),
   availableOnlyTally: z.boolean(),
+  /** Push the plan to the dialer as well as recording it. */
+  apply: z.boolean().default(false),
   plannedAgents: z.number().int().min(0).max(500),
   reservedLines: z.number().int().min(0).max(500),
 });
@@ -65,5 +67,33 @@ export async function POST(request: Request) {
   );
   if (error) return Response.json({ error: error.message }, { status: error.code === "42501" ? 403 : 500 });
 
-  return Response.json({ saved: true, warnings: issues.filter((i) => i.level !== "error").length });
+  // Recording the plan and applying it are separate: one is a decision, the other changes how
+  // customers are called. Only the second queues work for the dialer.
+  let commandId: string | null = null;
+  if (b.apply) {
+    const { data: cmd, error: cmdError } = await supabase
+      .from("commands")
+      .insert({
+        type: "update_campaign",
+        created_by: admin.email,
+        payload: {
+          campaignId: b.campaignId,
+          dialMethod: b.dialMethod,
+          linesPerAgent: b.linesPerAgent,
+          maxLinesPerAgent: b.maxLinesPerAgent,
+          hopperLevel: b.hopperLevel,
+          dialTimeoutSec: b.dialTimeoutSec,
+          maxDropPct: b.maxDropPct,
+          dropCallSeconds: b.dropCallSeconds,
+          availableOnlyTally: b.availableOnlyTally,
+        },
+      })
+      .select("id")
+      .single();
+    if (cmdError) return Response.json({ error: cmdError.message }, { status: 500 });
+    commandId = cmd.id;
+    await supabase.from("dial_settings").update({ applied_at: new Date().toISOString(), applied_by: admin.email }).eq("campaign_id", b.campaignId);
+  }
+
+  return Response.json({ saved: true, commandId, warnings: issues.filter((i) => i.level !== "error").length });
 }

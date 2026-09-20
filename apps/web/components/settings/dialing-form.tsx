@@ -54,28 +54,62 @@ export function DialingForm({ campaignId, settings, serverTrunks, carrierChannel
   const plan = useMemo(() => planCapacity(form, capacity), [form, capacity]);
   const blocked = issues.some((i) => i.level === "error");
 
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
+  /** Wait for the dialer to finish applying a plan, so the result is real rather than hopeful. */
+  async function awaitCommand(id: string): Promise<{ status: string; result: { error?: string; viaApi?: string[]; viaColumns?: string[] } | null }> {
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const res = await fetch(`/api/commands?id=${id}`).catch(() => null);
+      if (!res?.ok) continue;
+      const body = await res.json();
+      if (body.status === "done" || body.status === "failed") return body;
+    }
+    return { status: "timeout", result: null };
+  }
+
+  async function submit(apply: boolean) {
     setBusy(true);
     const res = await fetch("/api/settings/dialing", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ campaignId, ...form }),
+      body: JSON.stringify({ campaignId, ...form, apply }),
     }).catch(() => null);
     const body = res ? await res.json().catch(() => ({})) : {};
-    setBusy(false);
 
     if (!res?.ok) {
-      toast.error("Dialing plan not saved", { description: body.error ?? "Check the values and try again." });
+      setBusy(false);
+      toast.error(apply ? "Not applied" : "Not saved", { description: body.error ?? "Check the values and try again." });
       return;
     }
-    toast.success("Dialing plan saved", {
-      description:
-        form.dialMethod === "MANUAL"
-          ? "One call at a time. Nothing has changed on the dialer yet."
-          : `${form.linesPerAgent} lines per agent, ${plan.linesNeeded} calls at once with ${form.plannedAgents} agents. Nothing has changed on the dialer yet.`,
-    });
+
+    if (!apply) {
+      setBusy(false);
+      toast.success("Plan saved", { description: "Recorded only — the dialer still has its own settings." });
+      router.refresh();
+      return;
+    }
+
+    toast.message("Sent to the dialer…");
+    const finished = await awaitCommand(body.commandId);
+    setBusy(false);
+
+    if (finished.status === "timeout") {
+      toast.error("No answer from the dialer", { description: "The plan is saved. Check Dialer sync — its agent may be stopped." });
+    } else if (finished.status === "failed") {
+      toast.error("The dialer refused the change", { description: finished.result?.error ?? "See the command history." });
+    } else {
+      const changed = [...(finished.result?.viaApi ?? []), ...(finished.result?.viaColumns ?? [])].length;
+      toast.success("Applied on the dialer", {
+        description: `${changed} setting${changed === 1 ? "" : "s"} changed. ${
+          form.dialMethod === "MANUAL" ? "One call at a time." : `${form.linesPerAgent} lines per agent, up to ${plan.linesNeeded} calls at once.`
+        }`,
+      });
+    }
     router.refresh();
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    await submit(false);
   }
 
   return (
@@ -152,13 +186,23 @@ export function DialingForm({ campaignId, settings, serverTrunks, carrierChannel
 
       <div className="flex flex-wrap items-center gap-3">
         <button
-          type="submit"
+          type="button"
+          onClick={() => submit(true)}
           disabled={busy || blocked}
           className="inline-flex min-h-11 items-center rounded-full bg-primary px-5 text-button text-on-primary hover:bg-primary-hover active:bg-primary-pressed disabled:opacity-60"
         >
-          {busy ? "Saving…" : "Save plan"}
+          {busy ? "Working…" : "Apply to the dialer"}
         </button>
-        <span className="text-legal text-muted">{blocked ? "Fix the problems above to save." : "Saving records the plan. It is not sent to the dialer."}</span>
+        <button
+          type="submit"
+          disabled={busy || blocked}
+          className="inline-flex min-h-11 items-center rounded-full border border-line bg-surface px-5 text-button text-ink hover:border-line-strong disabled:opacity-60"
+        >
+          Save without applying
+        </button>
+        <span className="text-legal text-muted">
+          {blocked ? "Fix the problems above first." : "Applying changes how customers are called, straight away."}
+        </span>
       </div>
     </form>
   );

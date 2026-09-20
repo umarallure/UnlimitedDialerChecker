@@ -6,7 +6,7 @@ import { runRotation } from "./rotation";
 import { syncLive, syncStats } from "./sync";
 import { createPool } from "./vicidial";
 
-const VERSION = "0.7.0";
+const VERSION = "0.8.0";
 
 function log(level: "info" | "error", msg: string, extra?: unknown) {
   const line = `${new Date().toISOString()} ${level.toUpperCase()} ${msg}`;
@@ -80,7 +80,7 @@ async function main() {
   });
 
   const stopCommands = loop("commands", cfg.commandIntervalMs, async () => {
-    const n = await processCommands(db, cfg, (msg) => log("info", `command: ${msg}`));
+    const n = await processCommands(db, pool, cfg, (msg) => log("info", `command: ${msg}`));
     // Stay quiet on an idle queue; the per-command line above is the useful record.
     if (n > 0) return `${n} command(s) handled`;
   });
