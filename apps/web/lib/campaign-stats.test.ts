@@ -117,6 +117,25 @@ describe("humanAnsweredSet", () => {
   });
 });
 
+describe("calls that never got a final outcome", () => {
+  it("counts an agent's unfinished call as contact — somebody was on the line", () => {
+    const s = summarize([row({ status: "INCALL", calls: 2, talk_sec: 300 })], meta);
+    expect(s.contacted).toBe(2);
+    expect(s.contactRate).toBeCloseTo(100);
+  });
+
+  it("does not count one the dialer was still working, with no agent on it", () => {
+    const s = summarize([row({ status: "INCALL", calls: 2, agent_user: "" })], meta);
+    expect(s.contacted).toBe(0);
+  });
+
+  it("applies the same rule to the hourly and daily breakdowns", () => {
+    const rows = [row({ status: "DISPO", calls: 1, hour: 9 }), row({ status: "DISPO", calls: 1, hour: 9, agent_user: "" })];
+    expect(byHour(rows, meta)[9]).toEqual({ hour: 9, calls: 2, contacted: 1 });
+    expect(byDay(rows, meta)[0]).toMatchObject({ calls: 2, contacted: 1, connected: 1 });
+  });
+});
+
 describe("summarize", () => {
   const rows = [
     row({ status: "SALE", calls: 2, talk_sec: 900, calls_120_plus: 2, calls_300_plus: 1 }),

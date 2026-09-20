@@ -41,6 +41,18 @@ const DROPPED: ReadonlySet<string> = new Set<string>(OUTCOMES.dropped.statuses);
 const NO_ANSWER: ReadonlySet<string> = new Set<string>([...OUTCOMES.no_answer.statuses, ...OUTCOMES.busy.statuses]);
 const CONNECTED: ReadonlySet<string> = new Set<string>(OUTCOMES.connected.statuses);
 
+/**
+ * Calls that never reached a final outcome: the agent was connected and the call ended without
+ * being dispositioned, so VICIdial leaves the lead where it was. A person was on the line, so
+ * they count as contact when an agent was on them — but only then, because the same codes appear
+ * on calls the dialer was still working.
+ */
+const UNFINISHED: ReadonlySet<string> = new Set<string>(["INCALL", "DISPO", "QUEUE"]);
+
+function isContact(r: StatRow, human: ReadonlySet<string>): boolean {
+  return human.has(r.status) || (Boolean(r.agent_user) && UNFINISHED.has(r.status));
+}
+
 /** Statuses the dialer marks as human-answered, plus the ones we already know to be. */
 export function humanAnsweredSet(meta: StatusMeta[]): Set<string> {
   const set = new Set<string>([...CONNECTED, ...DROPPED]);
@@ -208,7 +220,7 @@ export function summarize(rows: StatRow[], meta: StatusMeta[]): Summary {
 
   for (const r of rows) {
     s.calls += r.calls;
-    if (human.has(r.status)) s.contacted += r.calls;
+    if (isContact(r, human)) s.contacted += r.calls;
     if (DROPPED.has(r.status)) s.drops += r.calls;
     if (MACHINE.has(r.status)) s.machines += r.calls;
     if (NO_ANSWER.has(r.status)) s.noAnswer += r.calls;
@@ -307,7 +319,7 @@ export function byHour(rows: StatRow[], meta: StatusMeta[]): HourRow[] {
     const h = hours[r.hour];
     if (!h) continue;
     h.calls += r.calls;
-    if (human.has(r.status)) h.contacted += r.calls;
+    if (isContact(r, human)) h.contacted += r.calls;
   }
   return hours;
 }
@@ -320,7 +332,7 @@ export function byDay(rows: StatRow[], meta: StatusMeta[]): DayRow[] {
   for (const r of rows) {
     const d = days.get(r.day) ?? { day: r.day, calls: 0, contacted: 0, connected: 0 };
     d.calls += r.calls;
-    if (human.has(r.status)) d.contacted += r.calls;
+    if (isContact(r, human)) d.contacted += r.calls;
     if (r.agent_user) d.connected += r.calls;
     days.set(r.day, d);
   }
