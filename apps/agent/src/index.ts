@@ -1,12 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import { loadConfig } from "./config";
-import { syncCampaignDays, syncCampaigns } from "./campaigns";
+import { syncCampaignDays, syncCampaigns, syncReferenceData } from "./campaigns";
 import { processCommands } from "./commands";
 import { runRotation } from "./rotation";
 import { syncLive, syncStats } from "./sync";
 import { createPool } from "./vicidial";
 
-const VERSION = "0.6.0";
+const VERSION = "0.7.0";
 
 function log(level: "info" | "error", msg: string, extra?: unknown) {
   const line = `${new Date().toISOString()} ${level.toUpperCase()} ${msg}`;
@@ -69,6 +69,7 @@ async function main() {
     const r = await syncStats(db, pool, cfg, statsState);
     const campaigns = await syncCampaigns(db, pool);
     await syncCampaignDays(db, pool, cfg.recentCallDays);
+    await syncReferenceData(db, pool);
     return `${r.callsToday} call(s) today across ${r.callerIds} caller ID(s), ${r.feed} feed row(s) upserted, ${r.recordings} recording(s) linked, ${campaigns} campaign(s) synced`;
   });
 

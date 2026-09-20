@@ -150,3 +150,49 @@ export async function syncCampaignDays(db: SupabaseClient, pool: Pool, days = 7)
   if (error) throw new Error(`sync campaign days: ${error.message}`);
   return rows.length;
 }
+
+/** Lists and users, mirrored so the app can offer real choices in a form. */
+export async function syncReferenceData(db: SupabaseClient, pool: Pool): Promise<{ lists: number; users: number }> {
+  const [listRows] = await pool.query<RowDataPacket[]>(
+    `SELECT l.list_id, l.list_name, l.campaign_id, l.active,
+            (SELECT COUNT(*) FROM vicidial_list v WHERE v.list_id = l.list_id) AS leads
+       FROM vicidial_lists l`,
+  );
+  const [userRows] = await pool.query<RowDataPacket[]>(
+    "SELECT user_id, user, full_name, user_level, user_group, active FROM vicidial_users",
+  );
+
+  const now = new Date().toISOString();
+  if (listRows.length) {
+    const { error } = await db.from("dialer_lists").upsert(
+      listRows.map((r) => ({
+        list_id: Number(r.list_id),
+        list_name: r.list_name ?? null,
+        campaign_id: r.campaign_id ?? null,
+        active: r.active === "Y",
+        leads: Number(r.leads ?? 0),
+        synced_at: now,
+      })),
+      { onConflict: "list_id" },
+    );
+    if (error) throw new Error(`sync lists: ${error.message}`);
+  }
+
+  if (userRows.length) {
+    const { error } = await db.from("dialer_users").upsert(
+      userRows.map((r) => ({
+        user_id: Number(r.user_id),
+        user_name: String(r.user),
+        full_name: r.full_name ?? null,
+        user_level: Number(r.user_level ?? 1),
+        user_group: r.user_group ?? null,
+        active: r.active === "Y",
+        synced_at: now,
+      })),
+      { onConflict: "user_id" },
+    );
+    if (error) throw new Error(`sync users: ${error.message}`);
+  }
+
+  return { lists: listRows.length, users: userRows.length };
+}
