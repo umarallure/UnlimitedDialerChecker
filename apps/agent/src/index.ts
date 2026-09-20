@@ -1,9 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 import { loadConfig } from "./config";
+import { syncCampaignDays, syncCampaigns, syncReferenceData } from "./campaigns";
+import { syncCallStats, syncCampaignStatuses } from "./call-stats";
+import { syncLeads } from "./leads";
+import { processCommands } from "./commands";
+import { runRotation } from "./rotation";
 import { syncLive, syncStats } from "./sync";
 import { createPool } from "./vicidial";
 
-const VERSION = "0.1.1";
+const VERSION = "0.14.0";
 
 function log(level: "info" | "error", msg: string, extra?: unknown) {
   const line = `${new Date().toISOString()} ${level.toUpperCase()} ${msg}`;
@@ -49,7 +54,7 @@ async function main() {
 
   log(
     "info",
-    `dialer-agent ${VERSION} starting: dialer=${cfg.dialerName} live=${cfg.liveIntervalMs}ms stats=${cfg.statsIntervalMs}ms cidOverride=${cfg.cidOverride ? "set" : "none"}`,
+    `dialer-agent ${VERSION} starting: dialer=${cfg.dialerName} live=${cfg.liveIntervalMs}ms stats=${cfg.statsIntervalMs}ms cidOverride=${cfg.cidOverride ? "set" : "none"} api=${cfg.api ? "configured" : "none"}`,
   );
 
   const statsState = { callsCursor: null as Date | null, lastPurge: 0 };
@@ -64,13 +69,33 @@ async function main() {
 
   const stopStats = loop("stats", cfg.statsIntervalMs, async () => {
     const r = await syncStats(db, pool, cfg, statsState);
-    return `${r.callsToday} call(s) today across ${r.callerIds} caller ID(s), ${r.feed} feed row(s) upserted`;
+    const campaigns = await syncCampaigns(db, pool);
+    await syncCampaignDays(db, pool, cfg.recentCallDays);
+    await syncReferenceData(db, pool);
+    await syncLeads(db, pool);
+    const stats = await syncCallStats(db, pool, cfg.recentCallDays);
+    await syncCampaignStatuses(db, pool);
+    return `${r.callsToday} call(s) today across ${r.callerIds} caller ID(s), ${r.feed} feed row(s) upserted, ${r.recordings} recording(s) linked, ${campaigns} campaign(s) synced, ${stats} report row(s)`;
+  });
+
+  const stopRotation = loop("rotation", cfg.rotationIntervalMs, async () => {
+    const r = await runRotation(db, pool, cfg);
+    const cid = r.cidRows ? `, ${r.cidRows} caller ID row(s) changed` : "";
+    return `${r.mode}: ${r.evaluated} number(s) evaluated, ${r.proposals} proposal(s), ${r.applied} applied${cid}`;
+  });
+
+  const stopCommands = loop("commands", cfg.commandIntervalMs, async () => {
+    const n = await processCommands(db, pool, cfg, (msg) => log("info", `command: ${msg}`));
+    // Stay quiet on an idle queue; the per-command line above is the useful record.
+    if (n > 0) return `${n} command(s) handled`;
   });
 
   const shutdown = async (signal: string) => {
     log("info", `${signal} received, stopping`);
     stopLive();
     stopStats();
+    stopRotation();
+    stopCommands();
     await db.from("dialers").update({ status: "stopped" }).eq("name", cfg.dialerName);
     await pool.end();
     process.exit(0);

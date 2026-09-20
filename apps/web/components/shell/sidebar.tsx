@@ -6,6 +6,7 @@ import {
   CircleHelp,
   Database,
   Hash,
+  ListPlus,
   Headset,
   House,
   Megaphone,
@@ -19,6 +20,7 @@ import { PRIMARY_NAV, type NavItem } from "./nav-items";
 const ICONS: Record<NavItem["icon"], LucideIcon> = {
   overview: House,
   numbers: Hash,
+  leads: ListPlus,
   calls: PhoneOutgoing,
   agents: Headset,
   rotation: Repeat,

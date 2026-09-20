@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
-    "mysql2": "^3.15.0"
+    "mysql2": "^3.15.0",
+    "@udc/policy": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22",

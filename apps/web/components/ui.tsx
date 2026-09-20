@@ -253,3 +253,147 @@ export function EmptyRow({ colSpan, children }: { colSpan: number; children: Rea
     </tr>
   );
 }
+
+/** Page-window helper: always shows first, last and the pages around the current one. */
+function pageWindow(page: number, pages: number): Array<number | "gap"> {
+  if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1);
+  const out: Array<number | "gap"> = [1];
+  const from = Math.max(2, page - 1);
+  const to = Math.min(pages - 1, page + 1);
+  if (from > 2) out.push("gap");
+  for (let p = from; p <= to; p++) out.push(p);
+  if (to < pages - 1) out.push("gap");
+  out.push(pages);
+  return out;
+}
+
+/**
+ * Border-led pager for server-rendered tables. `hrefFor` builds the link for a page,
+ * so the caller keeps its own filters in the URL.
+ */
+export function Pagination({
+  page,
+  pageSize,
+  total,
+  hrefFor,
+  unit = "results",
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  hrefFor: (page: number) => string;
+  unit?: string;
+}) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  const step = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-3 text-button";
+
+  return (
+    <nav aria-label="Pagination" className="flex flex-wrap items-center justify-between gap-4 border-t border-line px-6 py-4">
+      <p className="text-caption text-muted tabular-nums">
+        {total === 0 ? `No ${unit}` : `${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()} ${unit}`}
+      </p>
+      {pages > 1 && (
+        <div className="flex items-center gap-1">
+          {page > 1 ? (
+            <Link href={hrefFor(page - 1)} rel="prev" className={cx(step, "text-ink hover:bg-surface-alt")}>
+              Previous
+            </Link>
+          ) : (
+            <span aria-disabled className={cx(step, "text-muted")}>
+              Previous
+            </span>
+          )}
+          {pageWindow(page, pages).map((p, i) =>
+            p === "gap" ? (
+              <span key={`gap-${i}`} aria-hidden className="px-1 text-caption text-muted">
+                …
+              </span>
+            ) : p === page ? (
+              <span key={p} aria-current="page" className={cx(step, "border border-line-strong bg-surface-alt font-semibold text-ink tabular-nums")}>
+                {p}
+              </span>
+            ) : (
+              <Link key={p} href={hrefFor(p)} className={cx(step, "text-graphite tabular-nums hover:bg-surface-alt hover:text-ink")}>
+                {p}
+              </Link>
+            ),
+          )}
+          {page < pages ? (
+            <Link href={hrefFor(page + 1)} rel="next" className={cx(step, "text-ink hover:bg-surface-alt")}>
+              Next
+            </Link>
+          ) : (
+            <span aria-disabled className={cx(step, "text-muted")}>
+              Next
+            </span>
+          )}
+        </div>
+      )}
+    </nav>
+  );
+}
+
+/**
+ * Waiting states.
+ *
+ * A report that reaches back weeks takes a moment to add up. Leaving the old figures on screen
+ * while new ones are fetched is the dangerous version of that wait: a manager reads numbers that
+ * no longer answer the question they just asked. So the panel that is being recalculated says so.
+ */
+export function Spinner({ className, label = "Loading" }: { className?: string; label?: string }) {
+  return (
+    <span role="status" aria-label={label} className={cx("inline-block", className)}>
+      <svg viewBox="0 0 24 24" aria-hidden className={cx("size-5 animate-spin text-muted", className)} fill="none">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2.5" />
+        <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
+
+/** Placeholder for a panel whose contents are still being worked out. */
+export function LoadingPanel({ title, lines = 3, className }: { title: string; lines?: number; className?: string }) {
+  return (
+    <Panel
+      title={title}
+      subtitle={
+        <span className="flex items-center gap-2">
+          <Spinner className="size-4" /> Working it out…
+        </span>
+      }
+      className={className}
+      bodyClassName="flex flex-col gap-3 px-6 pb-6"
+    >
+      {Array.from({ length: lines }, (_, i) => (
+        <span key={i} className="h-11 animate-pulse rounded-md bg-surface-alt" />
+      ))}
+    </Panel>
+  );
+}
+
+/** Placeholder row of KPI cards, the same shape as the real ones so nothing jumps. */
+export function LoadingKpis({ count = 4 }: { count?: number }) {
+  return (
+    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-6">
+          <span className="h-4 w-24 animate-pulse rounded bg-surface-alt" />
+          <span className="h-10 w-20 animate-pulse rounded bg-surface-alt" />
+          <span className="h-3 w-28 animate-pulse rounded bg-surface-alt" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A horizontal proportion bar, for shares inside a table row. */
+export function ShareBar({ pct, tone = "neutral" }: { pct: number; tone?: Tone }) {
+  const fill = { neutral: "bg-graphite", success: "bg-success", warning: "bg-warning", error: "bg-error", accent: "bg-primary" }[tone];
+  return (
+    <span className="flex h-1.5 w-full min-w-16 overflow-hidden rounded-full bg-surface-alt">
+      <span className={cx("h-full rounded-full", fill)} style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
+    </span>
+  );
+}
