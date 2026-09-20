@@ -11,7 +11,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { href: "/numbers", label: "Numbers", icon: "numbers" },
   { href: "/calls", label: "Calls", icon: "calls" },
   { href: "/agents", label: "Agents", icon: "agents" },
-  { href: "/rotation", label: "Rotation", icon: "rotation", soon: "Phase 3" },
+  { href: "/rotation", label: "Rotation", icon: "rotation" },
   { href: "/alerts", label: "Alerts", icon: "alerts" },
   { href: "/campaigns", label: "Campaigns", icon: "campaigns", soon: "Phase 5" },
   { href: "/data", label: "Data", icon: "data", soon: "Phase 6" },

@@ -1,9 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { loadConfig } from "./config";
+import { runRotation } from "./rotation";
 import { syncLive, syncStats } from "./sync";
 import { createPool } from "./vicidial";
 
-const VERSION = "0.1.1";
+const VERSION = "0.2.0";
 
 function log(level: "info" | "error", msg: string, extra?: unknown) {
   const line = `${new Date().toISOString()} ${level.toUpperCase()} ${msg}`;
@@ -67,10 +68,17 @@ async function main() {
     return `${r.callsToday} call(s) today across ${r.callerIds} caller ID(s), ${r.feed} feed row(s) upserted`;
   });
 
+  const stopRotation = loop("rotation", cfg.rotationIntervalMs, async () => {
+    const r = await runRotation(db, pool, cfg);
+    const cid = r.cidRows ? `, ${r.cidRows} caller ID row(s) changed` : "";
+    return `${r.mode}: ${r.evaluated} number(s) evaluated, ${r.proposals} proposal(s), ${r.applied} applied${cid}`;
+  });
+
   const shutdown = async (signal: string) => {
     log("info", `${signal} received, stopping`);
     stopLive();
     stopStats();
+    stopRotation();
     await db.from("dialers").update({ status: "stopped" }).eq("name", cfg.dialerName);
     await pool.end();
     process.exit(0);

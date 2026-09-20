@@ -253,3 +253,84 @@ export function EmptyRow({ colSpan, children }: { colSpan: number; children: Rea
     </tr>
   );
 }
+
+/** Page-window helper: always shows first, last and the pages around the current one. */
+function pageWindow(page: number, pages: number): Array<number | "gap"> {
+  if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1);
+  const out: Array<number | "gap"> = [1];
+  const from = Math.max(2, page - 1);
+  const to = Math.min(pages - 1, page + 1);
+  if (from > 2) out.push("gap");
+  for (let p = from; p <= to; p++) out.push(p);
+  if (to < pages - 1) out.push("gap");
+  out.push(pages);
+  return out;
+}
+
+/**
+ * Border-led pager for server-rendered tables. `hrefFor` builds the link for a page,
+ * so the caller keeps its own filters in the URL.
+ */
+export function Pagination({
+  page,
+  pageSize,
+  total,
+  hrefFor,
+  unit = "results",
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  hrefFor: (page: number) => string;
+  unit?: string;
+}) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  const step = "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-3 text-button";
+
+  return (
+    <nav aria-label="Pagination" className="flex flex-wrap items-center justify-between gap-4 border-t border-line px-6 py-4">
+      <p className="text-caption text-muted tabular-nums">
+        {total === 0 ? `No ${unit}` : `${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()} ${unit}`}
+      </p>
+      {pages > 1 && (
+        <div className="flex items-center gap-1">
+          {page > 1 ? (
+            <Link href={hrefFor(page - 1)} rel="prev" className={cx(step, "text-ink hover:bg-surface-alt")}>
+              Previous
+            </Link>
+          ) : (
+            <span aria-disabled className={cx(step, "text-muted")}>
+              Previous
+            </span>
+          )}
+          {pageWindow(page, pages).map((p, i) =>
+            p === "gap" ? (
+              <span key={`gap-${i}`} aria-hidden className="px-1 text-caption text-muted">
+                …
+              </span>
+            ) : p === page ? (
+              <span key={p} aria-current="page" className={cx(step, "border border-line-strong bg-surface-alt font-semibold text-ink tabular-nums")}>
+                {p}
+              </span>
+            ) : (
+              <Link key={p} href={hrefFor(p)} className={cx(step, "text-graphite tabular-nums hover:bg-surface-alt hover:text-ink")}>
+                {p}
+              </Link>
+            ),
+          )}
+          {page < pages ? (
+            <Link href={hrefFor(page + 1)} rel="next" className={cx(step, "text-ink hover:bg-surface-alt")}>
+              Next
+            </Link>
+          ) : (
+            <span aria-disabled className={cx(step, "text-muted")}>
+              Next
+            </span>
+          )}
+        </div>
+      )}
+    </nav>
+  );
+}

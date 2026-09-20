@@ -126,3 +126,5 @@ export function nextTransition(did: DidSnapshot, h: HealthWindow | null, p: Poli
 function pct(n: number): string {
   return `${Math.round(n * 1000) / 10}%`;
 }
+
+export * from "./evaluate";
