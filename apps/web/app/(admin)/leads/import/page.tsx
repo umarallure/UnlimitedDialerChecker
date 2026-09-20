@@ -1,3 +1,4 @@
+import { CrmImport, type Connection } from "@/components/leads/crm-import";
 import { LeadImportForm } from "@/components/leads/import-form";
 import { Alert, DataTable, EmptyRow, PageHeader, Panel, StatusPill } from "@/components/ui";
 import { requireAdmin } from "@/lib/dal";
@@ -8,10 +9,11 @@ export default async function LeadImportPage() {
   await requireAdmin();
   const supabase = await createClient();
 
-  const [{ data: lists }, { data: agents }, { data: history }] = await Promise.all([
+  const [{ data: lists }, { data: agents }, { data: history }, { data: crm }] = await Promise.all([
     supabase.from("dialer_lists").select("list_id, list_name, campaign_id, active").order("active", { ascending: false }).order("list_id"),
     supabase.from("dialer_users").select("user_name, full_name, user_level, active").eq("active", true).lte("user_level", 7).order("user_name"),
     supabase.from("lead_imports").select("id, list_id, owner, file_name, total, added, duplicates, failed, created_by, created_at, finished_at").order("created_at", { ascending: false }).limit(10),
+    supabase.from("crm_connections").select("id, name, source_schema, source_table, column_map, filters, status, last_error, last_import_at").order("created_at").limit(1).maybeSingle(),
   ]);
 
   return (
@@ -25,6 +27,14 @@ export default async function LeadImportPage() {
 
       <Panel title="From a CSV file" bodyClassName="px-6 pb-6">
         <LeadImportForm lists={lists ?? []} agents={agents ?? []} />
+      </Panel>
+
+      <Panel
+        title="From your CRM"
+        subtitle="Read leads straight out of another database, filtered, without exporting a file."
+        bodyClassName="px-6 pb-6"
+      >
+        <CrmImport connection={(crm as Connection | null) ?? null} lists={lists ?? []} agents={agents ?? []} />
       </Panel>
 
       <Panel title="Recent imports" subtitle="Newest first." bodyClassName="px-2 pb-2">
