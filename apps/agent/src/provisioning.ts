@@ -1,4 +1,5 @@
 import type { Pool, RowDataPacket } from "mysql2/promise";
+import { copyDispositions } from "./dispositions";
 import type { VicidialApi } from "./vicidial-api";
 
 /**
@@ -138,6 +139,15 @@ export async function provisionAgent(pool: Pool, api: VicidialApi, a: NewAgent):
   });
   if (!record("list", list.ok, list.ok ? `${a.listId} ${a.listName}` : list.error)) {
     return { ok: false, steps };
+  }
+
+  // The template's outcomes travel with the campaign; they live in their own table, so copying
+  // the campaign row alone would leave a new agent with no way to disposition a call.
+  try {
+    const copied = await copyDispositions(pool, TEMPLATE_CAMPAIGN, a.campaignId);
+    record("outcomes", true, `${copied} copied from ${TEMPLATE_CAMPAIGN}`);
+  } catch (err) {
+    record("outcomes", false, err instanceof Error ? err.message : String(err));
   }
 
   const user = await api.call("add_user", {

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pool } from "mysql2/promise";
 import type { Config } from "./config";
+import { type Disposition, applyDispositions, validateDisposition } from "./dispositions";
 import { type NewAgent, provisionAgent, validateNewAgent } from "./provisioning";
 import { VicidialApi } from "./vicidial-api";
 
@@ -80,6 +81,18 @@ async function execute(cmd: CommandRow, api: VicidialApi | null, pool: Pool): Pr
     case "update_leads": {
       if (!api) return { ok: false, result: { error: "No VICIdial API credentials configured on the dialer" } };
       return updateLeads(cmd, api);
+    }
+    case "set_dispositions": {
+      const p = cmd.payload as unknown as { campaignId: string; dispositions: Disposition[] };
+      if (!p?.campaignId || !Array.isArray(p.dispositions)) {
+        return { ok: false, retryable: false, result: { error: "No campaign or no outcomes given" } };
+      }
+      for (const d of p.dispositions) {
+        const problem = validateDisposition(d);
+        if (problem) return { ok: false, retryable: false, result: { error: problem } };
+      }
+      const out = await applyDispositions(pool, p.campaignId, p.dispositions);
+      return { ok: true, result: { campaignId: p.campaignId, ...out } };
     }
     case "resync":
       // Handled by the sync loops; queuing it just marks the request.
