@@ -145,7 +145,9 @@ export async function syncStats(db: SupabaseClient, pool: Pool, cfg: Config, sta
       .from("calls_recent")
       .update({ recording_sec: r.lengthSec, recording_file: r.filename, recording_url: r.location })
       .eq("uniqueid", r.uniqueid)
-      .is("recording_file", null);
+      // The URL only appears after the compress cron runs, minutes after the filename does,
+      // so keep refreshing a call until it has one rather than stopping at the first write.
+      .is("recording_url", null);
     if (!error) recorded++;
   }
 
