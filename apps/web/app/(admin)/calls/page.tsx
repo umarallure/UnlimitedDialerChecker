@@ -1,4 +1,4 @@
-import { Clock, PhoneIncoming, PhoneOutgoing, Timer } from "lucide-react";
+import { Clock, PhoneIncoming, PhoneOutgoing, Play, Timer } from "lucide-react";
 import { CallFiltersBar } from "@/components/calls/filters";
 import { Alert, DataTable, EmptyRow, KpiCard, PageHeader, Pagination, Panel, StatusPill } from "@/components/ui";
 import { ANSWERED_STATUSES, OUTCOMES, RANGES, callsHref, hasFilters, parseFilters, searchClause } from "@/lib/calls";
@@ -7,7 +7,8 @@ import { callTone } from "@/lib/status";
 import { createClient } from "@/lib/supabase/server";
 import { formatDateTime, formatDuration, formatPhone, hoursAgoIso } from "@/lib/time";
 
-const COLUMNS = "uniqueid, call_date, outbound_cid, lead_phone_last4, campaign_id, agent_user, status, length_sec, sip_code, call_type";
+const COLUMNS =
+  "uniqueid, call_date, outbound_cid, lead_phone_last4, campaign_id, agent_user, status, length_sec, sip_code, call_type, recording_sec, recording_file, recording_url";
 const ANSWERED = new Set(ANSWERED_STATUSES);
 
 export default async function CallsPage({ searchParams }: PageProps<"/calls">) {
@@ -59,9 +60,9 @@ export default async function CallsPage({ searchParams }: PageProps<"/calls">) {
       <Panel title="Call feed" subtitle={`${RANGES[filters.range].label}, newest first.`} bodyClassName="p-0">
         <CallFiltersBar filters={filters} showing={total} />
         <div className="px-2">
-          <DataTable head={["Time", "Caller ID", "Lead", "Status", "Agent", "Campaign", "Duration", "SIP"]} minWidth={860} bare>
+          <DataTable head={["Time", "Caller ID", "Lead", "Status", "Agent", "Campaign", "Duration", "SIP", "Recording"]} minWidth={980} bare>
             {rows.length === 0 ? (
-              <EmptyRow colSpan={8}>
+              <EmptyRow colSpan={9}>
                 {hasFilters(filters) ? "No calls match these filters." : "No calls synced yet. The dialer agent syncs this feed every 15 minutes."}
               </EmptyRow>
             ) : (
@@ -75,6 +76,19 @@ export default async function CallsPage({ searchParams }: PageProps<"/calls">) {
                   <td>{c.campaign_id ?? "—"}</td>
                   <td className="tabular-nums">{formatDuration(c.length_sec)}</td>
                   <td className="tabular-nums">{c.sip_code ?? "—"}</td>
+                  <td className="tabular-nums">
+                    {c.recording_file ? (
+                      c.recording_url ? (
+                        <a href={c.recording_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-ink hover:underline" title={c.recording_file}>
+                          <Play aria-hidden className="size-3.5" /> {formatDuration(c.recording_sec)}
+                        </a>
+                      ) : (
+                        <span title={c.recording_file}>{formatDuration(c.recording_sec)}</span>
+                      )
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                  </td>
                 </tr>
               ))
             )}

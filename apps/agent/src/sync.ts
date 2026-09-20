@@ -3,7 +3,7 @@ import type { Pool } from "mysql2/promise";
 import { aggregateByCid, localDay, startOfLocalDay, type CallRow, type CidCounters } from "./aggregate";
 import { resolveCid } from "./cid";
 import type { Config } from "./config";
-import { fetchCalls, fetchLiveAgents } from "./vicidial";
+import { fetchCalls, fetchLiveAgents, fetchRecordings } from "./vicidial";
 
 const BATCH = 500;
 
@@ -136,6 +136,19 @@ export async function syncStats(db: SupabaseClient, pool: Pool, cfg: Config, sta
   if (feedRows.length) {
     await upsertInBatches(db, "calls_recent", feedRows.map((r) => callFeedRow(r, cfg, idByE164)), "uniqueid");
   }
+  // 4b. Attach recordings. They land a few minutes after the call, so re-read the whole
+  // feed window rather than only what is new, and update the rows that now have audio.
+  const recordings = await fetchRecordings(pool, windowStart);
+  let recorded = 0;
+  for (const r of recordings) {
+    const { error } = await db
+      .from("calls_recent")
+      .update({ recording_sec: r.lengthSec, recording_file: r.filename, recording_url: r.location })
+      .eq("uniqueid", r.uniqueid)
+      .is("recording_file", null);
+    if (!error) recorded++;
+  }
+
   state.callsCursor = now;
 
   // 5. Purge the feed hourly.
@@ -144,7 +157,7 @@ export async function syncStats(db: SupabaseClient, pool: Pool, cfg: Config, sta
     state.lastPurge = now.getTime();
   }
 
-  return { callsToday: todayRows.length, callerIds: aggToday.size, feed: feedRows.length };
+  return { callsToday: todayRows.length, callerIds: aggToday.size, feed: feedRows.length, recordings: recorded };
 }
 
 function dailyRows(agg: Map<string, CidCounters>, day: string, idByE164: Map<string, string>) {

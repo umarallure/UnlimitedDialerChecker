@@ -87,3 +87,30 @@ export async function fetchCalls(pool: Pool, since: Date): Promise<CallRow[]> {
   }
   return out;
 }
+
+export type RecordingRow = {
+  uniqueid: string;
+  lengthSec: number | null;
+  filename: string | null;
+  location: string | null;
+};
+
+/**
+ * Recording metadata for calls since `since`. `vicidial_id` is the call's uniqueid, so this
+ * joins straight onto the call feed. Only metadata is read — the audio stays on the dialer.
+ * A recording appears here a few minutes after the call, once the compress cron has run.
+ */
+export async function fetchRecordings(pool: Pool, since: Date): Promise<RecordingRow[]> {
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT vicidial_id, length_in_sec, filename, location
+       FROM recording_log
+      WHERE start_time >= ? AND vicidial_id IS NOT NULL AND vicidial_id != ''`,
+    [since],
+  );
+  return rows.map((r) => ({
+    uniqueid: String(r.vicidial_id),
+    lengthSec: r.length_in_sec === null || r.length_in_sec === undefined ? null : Number(r.length_in_sec),
+    filename: r.filename || null,
+    location: r.location || null,
+  }));
+}
