@@ -2,6 +2,7 @@ import { CrmImport, type Connection } from "@/components/leads/crm-import";
 import { LeadImportForm } from "@/components/leads/import-form";
 import { Alert, DataTable, EmptyRow, PageHeader, Panel, StatusPill } from "@/components/ui";
 import { requireAdmin } from "@/lib/dal";
+import { agentTargets } from "@/lib/agent-targets";
 import { createClient } from "@/lib/supabase/server";
 import { formatDateTime, relative } from "@/lib/time";
 
@@ -11,29 +12,13 @@ export default async function LeadImportPage() {
 
   const [{ data: lists }, { data: agents }, { data: history }, { data: crm }, { data: groups }] = await Promise.all([
     supabase.from("dialer_lists").select("list_id, list_name, campaign_id, active").order("active", { ascending: false }).order("list_id"),
-    supabase.from("dialer_users").select("user_name, full_name, user_level, active").eq("active", true).lte("user_level", 7).order("user_name"),
+    supabase.from("dialer_users").select("user_name, full_name, user_level, user_group, active").eq("active", true).lte("user_level", 7).order("user_name"),
     supabase.from("lead_imports").select("id, list_id, owner, file_name, total, added, duplicates, failed, created_by, created_at, finished_at").order("created_at", { ascending: false }).limit(10),
     supabase.from("crm_connections").select("id, name, source_schema, source_table, column_map, filters, status, last_error, last_import_at").order("created_at").limit(1).maybeSingle(),
     supabase.from("dialer_user_groups").select("user_group, allowed_campaigns"),
   ]);
 
-  // Each agent's own campaign and list, so an import can be split between them without anyone
-  // choosing list numbers by hand.
-  const listsByCampaign = new Map<string, { list_id: number }[]>();
-  for (const l of lists ?? []) {
-    if (!l.campaign_id) continue;
-    listsByCampaign.set(l.campaign_id, [...(listsByCampaign.get(l.campaign_id) ?? []), { list_id: l.list_id }]);
-  }
-  const groupCampaigns = new Map(
-    (groups ?? []).map((g) => [g.user_group, (g.allowed_campaigns ?? "").trim().split(/s+/).filter((c: string) => c && c !== "-" && c !== "-ALL-CAMPAIGNS-")]),
-  );
-  const agentTargets = (agents ?? []).map((a) => {
-    const campaigns = groupCampaigns.get((a as { user_group?: string }).user_group ?? "") ?? [];
-    // Their own campaign is the one named after them; anything else they merely have access to.
-    const own = campaigns.find((c: string) => c.startsWith("AG_")) ?? campaigns[0] ?? null;
-    const list = own ? (listsByCampaign.get(own)?.[0]?.list_id ?? null) : null;
-    return { user_name: a.user_name, full_name: a.full_name, listId: list, campaignId: own };
-  });
+  const targets = agentTargets(agents ?? [], groups ?? [], lists ?? []);
 
   return (
     <>
@@ -53,7 +38,7 @@ export default async function LeadImportPage() {
         subtitle="Read leads straight out of another database, filtered, without exporting a file."
         bodyClassName="px-6 pb-6"
       >
-        <CrmImport connection={(crm as Connection | null) ?? null} agents={agentTargets} />
+        <CrmImport connection={(crm as Connection | null) ?? null} agents={targets} />
       </Panel>
 
       <Panel title="Recent imports" subtitle="Newest first." bodyClassName="px-2 pb-2">

@@ -27,6 +27,8 @@ const GUESSES: Record<string, RegExp> = {
   postalCode: /^(zip|zip_code|postal_code|postcode)$/i,
   email: /^email$/i,
   address1: /^(address|address1|street)$/i,
+  // Not written to the lead; read so the sample can show why a row matched.
+  stage: /^(stage|status)$/i,
 };
 
 /** The table holding leads, so nobody has to pick it every time. */
@@ -68,7 +70,7 @@ export function CrmImportDialog({
   const [limit, setLimit] = useState(500);
 
   const [chosen, setChosen] = useState<string[]>([]);
-  const [preview, setPreview] = useState<{ rows: PreviewRow[]; unusable: number; excluded: number } | null>(null);
+  const [preview, setPreview] = useState<{ rows: PreviewRow[]; matching: number; unusable: number; excluded: number } | null>(null);
   const [busy, setBusy] = useState<"loading" | "preview" | "import" | null>(null);
 
   const columnMap = useMemo(() => {
@@ -169,7 +171,7 @@ export function CrmImportDialog({
     };
   }, [open, load]);
 
-  async function runPreview() {
+  const runPreview = useCallback(async () => {
     setBusy("preview");
     const res = await fetch("/api/crm/preview", {
       method: "POST",
@@ -183,7 +185,15 @@ export function CrmImportDialog({
       return;
     }
     setPreview(body);
-  }
+  }, [connectionId, table, columnMap, sourceIdColumn, filters]);
+
+  // Re-check whenever the filters change, after a pause so typing a date does not fire a query
+  // per keystroke.
+  useEffect(() => {
+    if (!open || !table || !columnMap.phoneNumber) return;
+    const t = setTimeout(() => void runPreview(), 400);
+    return () => clearTimeout(t);
+  }, [open, table, columnMap.phoneNumber, runPreview]);
 
   async function runImport() {
     setBusy("import");
@@ -206,10 +216,9 @@ export function CrmImportDialog({
   }
 
   const ready = targets.length > 0 && Boolean(columnMap.phoneNumber) && busy === null;
-  const matching = preview?.rows.length;
 
   return (
-    <Modal open={open} onClose={onClose} title="Import leads" description={table ? `From ${table}` : "Reading the CRM…"} width={720}>
+    <Modal open={open} onClose={onClose} title="Import leads" description={table ? `From ${table}` : "Reading the CRM…"} width={980}>
       <div className="flex flex-col gap-5">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1">
@@ -276,19 +285,63 @@ export function CrmImportDialog({
           </div>
         </div>
 
-        <p className="rounded-lg bg-surface-alt p-3 text-caption text-graphite">
-          {targets.length === 0
-            ? "Choose who gets these leads. Each agent's share goes to their own list, owned by them."
-            : `${describeSplit(matching ?? limit, targets)}${matching === undefined ? ", of whatever matches" : ""}`}
-          {preview && (
-            <span className="text-muted">
-              {" "}
-              · {preview.rows.length} in the first 25 checked
-              {preview.unusable > 0 && `, ${preview.unusable} without a usable number`}
-              {preview.excluded > 0 && `, ${preview.excluded} already taken`}
+        <div className="flex flex-col gap-2 rounded-lg border border-line">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
+            <span className="text-caption text-graphite">
+              {busy === "preview" ? (
+                "Checking…"
+              ) : preview ? (
+                <>
+                  <strong className="text-ink tabular-nums">{Math.min(preview.matching, limit).toLocaleString()}</strong> will be imported
+                  {preview.matching > limit && <span className="text-muted"> of {preview.matching.toLocaleString()} matching</span>}
+                  {preview.unusable > 0 && <span className="text-warning"> · {preview.unusable} of the sample had no usable number</span>}
+                  {preview.excluded > 0 && <span className="text-muted"> · {preview.excluded} already taken</span>}
+                </>
+              ) : (
+                "Choose filters to see what matches"
+              )}
             </span>
-          )}
-        </p>
+            {targets.length > 0 && preview && (
+              <span className="text-caption text-ink">{describeSplit(Math.min(preview.matching, limit), targets)}</span>
+            )}
+          </div>
+
+          <div className="max-h-56 overflow-y-auto px-2 pb-2">
+            <table className="w-full text-caption">
+              <thead className="sticky top-0 bg-surface">
+                <tr className="text-left">
+                  <th className="px-2 py-2 font-medium text-graphite">Phone</th>
+                  <th className="px-2 py-2 font-medium text-graphite">Name</th>
+                  <th className="px-2 py-2 font-medium text-graphite">State</th>
+                  <th className="px-2 py-2 font-medium text-graphite">Stage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(preview?.rows ?? []).length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-2 py-6 text-center text-muted">
+                      {preview ? "Nothing matches those filters." : "—"}
+                    </td>
+                  </tr>
+                )}
+                {(preview?.rows ?? []).map((r) => (
+                  <tr key={r.sourceId} className="border-t border-line">
+                    <td className={`px-2 py-2 tabular-nums ${r.phone ? "text-ink" : "text-error"}`}>{r.phone ?? "no usable number"}</td>
+                    <td className="px-2 py-2">{[r.values.firstName, r.values.lastName].filter(Boolean).join(" ") || "—"}</td>
+                    <td className="px-2 py-2">{r.values.state ?? "—"}</td>
+                    <td className="max-w-[260px] truncate px-2 py-2 text-muted" title={r.values.stage ?? ""}>
+                      {r.values.stage ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {targets.length === 0 && (
+          <p className="text-caption text-muted">Choose who gets these leads. Each agent&rsquo;s share goes to their own list, owned by them.</p>
+        )}
 
         <div className="flex flex-wrap items-center gap-3 border-t border-line pt-5">
           <button
@@ -299,14 +352,6 @@ export function CrmImportDialog({
           >
             <Download aria-hidden className="size-4" />
             {busy === "import" ? "Importing…" : `Import up to ${limit}`}
-          </button>
-          <button
-            type="button"
-            onClick={runPreview}
-            disabled={busy !== null || !columnMap.phoneNumber}
-            className="inline-flex min-h-11 items-center rounded-full border border-line bg-surface px-5 text-button text-ink hover:border-line-strong disabled:opacity-60"
-          >
-            {busy === "preview" ? "Checking…" : "Check first"}
           </button>
 
           {/* Only worth showing when the guess was wrong. */}

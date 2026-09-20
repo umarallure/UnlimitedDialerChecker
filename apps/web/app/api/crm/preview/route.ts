@@ -70,7 +70,23 @@ export async function POST(request: Request) {
       });
 
       const { rows } = await client.query(query.text, query.values);
-      return { rows, sql: query.text };
+
+      // How many match in total, so the dialog can say "1,273 match" rather than only showing
+      // the handful it sampled. Counted without the limit, which is a sample size, not a filter.
+      const counted = buildSelect({
+        schema: conn.source_schema,
+        table: b.table,
+        columns: [b.sourceIdColumn],
+        knownColumns: columns,
+        knownTables: tables,
+        kinds,
+        filters: b.filters as Filter[],
+        excludeIds: excludeIds.length ? { column: b.sourceIdColumn, ids: excludeIds } : undefined,
+        limit: 20000,
+      });
+      const total = await client.query<{ n: string }>(`select count(*) as n from (${counted.text}) as matching`, counted.values);
+
+      return { rows, matching: Number(total.rows[0]?.n ?? rows.length) };
     });
 
     const phoneCol = b.columnMap.phoneNumber;
@@ -90,6 +106,7 @@ export async function POST(request: Request) {
 
     return Response.json({
       rows,
+      matching: result.matching,
       total: rows.length,
       unusable: rows.filter((r) => !r.phone).length,
       excluded: excludeIds.length,
