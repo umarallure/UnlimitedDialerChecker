@@ -103,6 +103,9 @@ type LeadInput = {
   altPhone?: string;
   comments?: string;
   vendorLeadCode?: string;
+  /** The CRM's id for this lead. Goes to source_id (50 chars) rather than vendor_lead_code
+   *  (20), which would truncate a UUID into a link that opens nothing. */
+  sourceId?: string;
 };
 
 type AddLeadsPayload = {
@@ -151,6 +154,7 @@ async function addLeads(cmd: CommandRow, api: VicidialApi): Promise<CommandOutco
       alt_phone: lead.altPhone,
       comments: lead.comments,
       vendor_lead_code: lead.vendorLeadCode,
+      source_id: lead.sourceId,
     });
 
     if (res.ok) {
@@ -232,6 +236,9 @@ type UpdateCampaignPayload = {
   dialTimeoutSec?: number;
   campaignCid?: string;
   active?: boolean;
+  /** Already in VICIdial's own --A--field--B-- form. */
+  webFormAddress?: string;
+  dispoCallUrl?: string;
   // Settings the API has no parameter for, written straight to the column instead.
   maxDropPct?: number;
   dropCallSeconds?: number;
@@ -294,6 +301,8 @@ async function updateCampaign(cmd: CommandRow, api: VicidialApi, pool: Pool): Pr
     dial_timeout: p.dialTimeoutSec,
     campaign_cid: p.campaignCid,
     active: p.active === undefined ? undefined : p.active ? "Y" : "N",
+    web_form_address: p.webFormAddress,
+    dispo_call_url: p.dispoCallUrl,
   };
   const sent = Object.entries(viaApi)
     .filter(([k, v]) => k !== "campaign_id" && v !== undefined)

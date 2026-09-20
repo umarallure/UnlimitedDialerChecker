@@ -117,7 +117,7 @@ export async function POST(request: Request) {
     }
     seen.add(phone);
 
-    const lead: Record<string, string> = { phoneNumber: phone };
+    const lead: Record<string, string> = { phoneNumber: phone, sourceId };
     for (const field of TEXT_FIELDS) {
       const col = b.columnMap[field];
       if (!col) continue;
@@ -127,6 +127,18 @@ export async function POST(request: Request) {
       if (!value) continue;
       lead[field] = field === "state" ? value.slice(0, 2).toUpperCase() : value.slice(0, MAX_LENGTH[field] ?? 255);
     }
+    // Context the agent screen shows in Comments, since a stage or a language means nothing
+    // to them as a bare column name.
+    const context: string[] = [];
+    for (const [label, field] of [["Stage", "stage"], ["Language", "language"]] as const) {
+      const col = b.columnMap[field];
+      const value = col ? row[col] : null;
+      if (value) context.push(`${label}: ${String(value).trim()}`);
+    }
+    if (context.length > 0) {
+      lead.comments = [lead.comments, context.join(" · ")].filter(Boolean).join(" — ").slice(0, 255);
+    }
+
     leads.push(lead);
     taken.push({ source_id: sourceId, phone });
   }

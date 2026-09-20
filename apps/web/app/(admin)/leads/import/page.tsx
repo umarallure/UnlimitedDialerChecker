@@ -1,4 +1,5 @@
 import { CrmImport, type Connection } from "@/components/leads/crm-import";
+import { LeadLinkForm } from "@/components/leads/lead-link-form";
 import { LeadImportForm } from "@/components/leads/import-form";
 import { Alert, DataTable, EmptyRow, PageHeader, Panel, StatusPill } from "@/components/ui";
 import { requireAdmin } from "@/lib/dal";
@@ -10,15 +11,21 @@ export default async function LeadImportPage() {
   await requireAdmin();
   const supabase = await createClient();
 
-  const [{ data: lists }, { data: agents }, { data: history }, { data: crm }, { data: groups }] = await Promise.all([
+  const [{ data: lists }, { data: agents }, { data: history }, { data: crm }, { data: groups }, { data: campaigns }] = await Promise.all([
     supabase.from("dialer_lists").select("list_id, list_name, campaign_id, active").order("active", { ascending: false }).order("list_id"),
     supabase.from("dialer_users").select("user_name, full_name, user_level, user_group, active").eq("active", true).lte("user_level", 7).order("user_name"),
     supabase.from("lead_imports").select("id, list_id, owner, file_name, total, added, duplicates, failed, created_by, created_at, finished_at").order("created_at", { ascending: false }).limit(10),
-    supabase.from("crm_connections").select("id, name, source_schema, source_table, column_map, filters, status, last_error, last_import_at").order("created_at").limit(1).maybeSingle(),
+    supabase.from("crm_connections").select("id, name, source_schema, source_table, column_map, filters, status, last_error, last_import_at, lead_url_template").order("created_at").limit(1).maybeSingle(),
     supabase.from("dialer_user_groups").select("user_group, allowed_campaigns"),
+    supabase.from("campaigns_live").select("campaign_id, web_form_address").order("campaign_id"),
   ]);
 
   const targets = agentTargets(agents ?? [], groups ?? [], lists ?? []);
+  // The campaigns agents actually work, which are the ones worth putting a CRM link on.
+  const agentCampaigns = [...new Set(targets.map((t) => t.campaignId).filter((c): c is string => Boolean(c)))].map((id) => ({
+    campaign_id: id,
+    hasLink: Boolean((campaigns ?? []).find((c) => c.campaign_id === id)?.web_form_address),
+  }));
 
   return (
     <>
@@ -39,6 +46,11 @@ export default async function LeadImportPage() {
         bodyClassName="px-6 pb-6"
       >
         <CrmImport connection={(crm as Connection | null) ?? null} agents={targets} />
+        {crm && (
+          <div className="mt-6 border-t border-line pt-5">
+            <LeadLinkForm connectionId={crm.id} template={crm.lead_url_template} campaigns={agentCampaigns} />
+          </div>
+        )}
       </Panel>
 
       <Panel title="Recent imports" subtitle="Newest first." bodyClassName="px-2 pb-2">
