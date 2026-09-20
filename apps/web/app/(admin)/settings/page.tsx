@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { NotificationForm, type NotificationSettings } from "@/components/settings/notification-form";
 import { settingsDrift } from "@udc/policy";
+import { ApiCheckButton } from "@/components/settings/api-check";
 import { DialingForm } from "@/components/settings/dialing-form";
 import { ReputationGateForm } from "@/components/settings/reputation-gate-form";
 import { Alert, DataTable, EmptyRow, PageHeader, Panel, StatusPill } from "@/components/ui";
@@ -36,7 +37,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
   const tab: Tab = (TABS as readonly string[]).includes(String(sp.tab)) ? (sp.tab as Tab) : "notifications";
 
   const supabase = await createClient();
-  const [settings, emails, policy, dialers, admins, scans, dialSettings, liveCampaign] = await Promise.all([
+  const [settings, emails, policy, dialers, admins, scans, dialSettings, liveCampaign, commands] = await Promise.all([
     supabase.from("notification_settings").select("recipients, immediate_enabled, digest_enabled, digest_hour_et, last_run_at, last_error").maybeSingle(),
     supabase.from("notification_log").select("kind, status, subject, error, sent_at, recipients").order("sent_at", { ascending: false }).limit(10),
     supabase.from("policies").select("enforcement_mode, settings, updated_at, updated_by").eq("is_active", true).maybeSingle(),
@@ -45,6 +46,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
     supabase.from("reputation_checks").select("did_id"),
     supabase.from("dial_settings").select("*").order("campaign_id").limit(1).maybeSingle(),
     supabase.from("campaigns_live").select("*").order("campaign_id").limit(1).maybeSingle(),
+    supabase.from("commands").select("id, type, status, result, created_by, created_at, finished_at").order("created_at", { ascending: false }).limit(8),
   ]);
 
   const s = settings.data;
@@ -294,6 +296,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
       )}
 
       {tab === "dialer" && (
+        <div className="flex flex-col gap-5">
         <Panel title="Dialer sync" subtitle="The agent on the VICIdial server pushes agent states and per-number stats every 15 minutes." bodyClassName="px-2 pb-2">
           <DataTable head={["Dialer", "Status", "Last sync", "Agent version", "Connected since"]} minWidth={640} bare>
             {(dialers.data ?? []).length === 0 ? (
@@ -316,6 +319,38 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
             )}
           </DataTable>
         </Panel>
+
+        <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
+          <Panel title="VICIdial API" subtitle="Used to add leads and change campaigns from here." bodyClassName="px-6 pb-6">
+            <ApiCheckButton />
+          </Panel>
+
+          <Panel title="Recent commands" subtitle="Work sent to the dialer, newest first." bodyClassName="px-2 pb-2">
+            <DataTable head={["Sent", "Command", "By", "Status", "Result"]} minWidth={620} bare>
+              {(commands.data ?? []).length === 0 ? (
+                <EmptyRow colSpan={5}>Nothing has been sent to the dialer yet.</EmptyRow>
+              ) : (
+                (commands.data ?? []).map((c) => {
+                  const r = (c.result ?? {}) as { error?: string; version?: string; note?: string };
+                  return (
+                    <tr key={c.id}>
+                      <td className="tabular-nums">{formatDateTime(c.created_at)}</td>
+                      <td className="font-semibold !text-ink">{c.type}</td>
+                      <td>{c.created_by}</td>
+                      <td>
+                        <StatusPill tone={c.status === "done" ? "success" : c.status === "failed" ? "error" : "warning"}>{c.status}</StatusPill>
+                      </td>
+                      <td className="max-w-[360px] truncate" title={r.error ?? r.version ?? r.note ?? ""}>
+                        {r.error ?? r.version ?? r.note ?? "—"}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </DataTable>
+          </Panel>
+        </div>
+        </div>
       )}
 
       {tab === "admins" && (

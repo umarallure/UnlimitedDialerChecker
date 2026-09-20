@@ -1,11 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import { loadConfig } from "./config";
 import { syncCampaignDays, syncCampaigns } from "./campaigns";
+import { processCommands } from "./commands";
 import { runRotation } from "./rotation";
 import { syncLive, syncStats } from "./sync";
 import { createPool } from "./vicidial";
 
-const VERSION = "0.5.0";
+const VERSION = "0.6.0";
 
 function log(level: "info" | "error", msg: string, extra?: unknown) {
   const line = `${new Date().toISOString()} ${level.toUpperCase()} ${msg}`;
@@ -51,7 +52,7 @@ async function main() {
 
   log(
     "info",
-    `dialer-agent ${VERSION} starting: dialer=${cfg.dialerName} live=${cfg.liveIntervalMs}ms stats=${cfg.statsIntervalMs}ms cidOverride=${cfg.cidOverride ? "set" : "none"}`,
+    `dialer-agent ${VERSION} starting: dialer=${cfg.dialerName} live=${cfg.liveIntervalMs}ms stats=${cfg.statsIntervalMs}ms cidOverride=${cfg.cidOverride ? "set" : "none"} api=${cfg.api ? "configured" : "none"}`,
   );
 
   const statsState = { callsCursor: null as Date | null, lastPurge: 0 };
@@ -77,11 +78,18 @@ async function main() {
     return `${r.mode}: ${r.evaluated} number(s) evaluated, ${r.proposals} proposal(s), ${r.applied} applied${cid}`;
   });
 
+  const stopCommands = loop("commands", cfg.commandIntervalMs, async () => {
+    const n = await processCommands(db, cfg, (msg) => log("info", `command: ${msg}`));
+    // Stay quiet on an idle queue; the per-command line above is the useful record.
+    if (n > 0) return `${n} command(s) handled`;
+  });
+
   const shutdown = async (signal: string) => {
     log("info", `${signal} received, stopping`);
     stopLive();
     stopStats();
     stopRotation();
+    stopCommands();
     await db.from("dialers").update({ status: "stopped" }).eq("name", cfg.dialerName);
     await pool.end();
     process.exit(0);
