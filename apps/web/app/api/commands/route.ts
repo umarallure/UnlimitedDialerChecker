@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 
 /** Verbs the dialer agent implements. Adding one here without implementing it queues a command
  *  that can only fail, so this list and the agent's switch stay in step. */
-const COMMAND_TYPES = ["api_ping", "resync"] as const;
+const COMMAND_TYPES = ["api_ping", "resync", "create_agent"] as const;
 
 const Body = z.object({
   type: z.enum(COMMAND_TYPES),

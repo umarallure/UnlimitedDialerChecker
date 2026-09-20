@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Pool } from "mysql2/promise";
 import type { Config } from "./config";
+import { type NewAgent, provisionAgent, validateNewAgent } from "./provisioning";
 import { VicidialApi } from "./vicidial-api";
 
 /**
@@ -64,6 +65,17 @@ async function execute(cmd: CommandRow, api: VicidialApi | null, pool: Pool): Pr
     case "update_campaign": {
       if (!api) return { ok: false, result: { error: "No VICIdial API credentials configured on the dialer" } };
       return updateCampaign(cmd, api, pool);
+    }
+    case "create_agent": {
+      if (!api) return { ok: false, result: { error: "No VICIdial API credentials configured on the dialer" } };
+      const a = cmd.payload as unknown as NewAgent;
+      const problem = validateNewAgent(a);
+      if (problem) return { ok: false, retryable: false, result: { error: problem } };
+
+      const out = await provisionAgent(pool, api, a);
+      // A partial run must not be retried: the steps that succeeded would then collide with
+      // themselves. The result lists exactly how far it got.
+      return { ok: out.ok, retryable: false, result: { user: a.user, campaignId: a.campaignId, steps: out.steps } };
     }
     case "resync":
       // Handled by the sync loops; queuing it just marks the request.
@@ -174,8 +186,13 @@ type UpdateCampaignPayload = {
   dropCallSeconds?: number;
   availableOnlyTally?: boolean;
   recording?: string;
-  ownerOnly?: boolean;
+  /** agent_dial_owner_only is an enum, not a switch: USER restricts an agent to leads they own,
+   *  USER_BLANK also lets them dial unowned ones, NONE lifts the restriction. */
+  ownerOnly?: "NONE" | "USER" | "USER_BLANK" | "TERRITORY" | "USER_GROUP";
 };
+
+const OWNER_ONLY_VALUES = ["NONE", "USER", "USER_BLANK", "TERRITORY", "USER_GROUP"];
+const RECORDING_VALUES = ["NEVER", "ONDEMAND", "ALLCALLS", "ALLFORCE"];
 
 /** The only columns this agent may write. Matches the column-level grant on the database, so a
  *  mistake here fails on the grant rather than changing something it should not. */
@@ -207,6 +224,14 @@ async function updateCampaign(cmd: CommandRow, api: VicidialApi, pool: Pool): Pr
   }
   if (p.dialMethod === "MANUAL" && (p.linesPerAgent ?? 0) > 1) {
     return { ok: false, retryable: false, result: { error: "Refused: manual dialing cannot run several lines per agent" } };
+  }
+  // These two are enums in VICIdial. An unexpected value would be silently coerced to the
+  // column's default, quietly turning a restriction off, so refuse it instead.
+  if (p.ownerOnly !== undefined && !OWNER_ONLY_VALUES.includes(p.ownerOnly)) {
+    return { ok: false, retryable: false, result: { error: `Refused: "${p.ownerOnly}" is not a lead-ownership rule` } };
+  }
+  if (p.recording !== undefined && !RECORDING_VALUES.includes(p.recording)) {
+    return { ok: false, retryable: false, result: { error: `Refused: "${p.recording}" is not a recording mode` } };
   }
 
   const viaApi: Record<string, string | number | undefined> = {
@@ -315,6 +340,15 @@ export async function processCommands(db: SupabaseClient, pool: Pool, cfg: Confi
         claimed_by: retryable ? null : cfg.dialerName,
       })
       .eq("id", row.id);
+
+    // Creating an agent carries their VICIdial password. It is needed for the one call that
+    // creates the account and never again, so it is removed from the stored payload as soon as
+    // the command finishes rather than being kept in the queue for ever.
+    if (cmd.type === "create_agent" && !retryable && "password" in cmd.payload) {
+      const { password, ...rest } = cmd.payload as { password?: string };
+      void password;
+      await db.from("commands").update({ payload: rest }).eq("id", row.id);
+    }
 
     // Roll a finished chunk into its import, so the screen shows one job rather than many.
     if (cmd.import_id && !retryable) {
