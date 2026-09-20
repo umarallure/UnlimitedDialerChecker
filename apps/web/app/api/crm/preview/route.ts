@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { explainCrmError, listColumns, listTables, withCrm } from "@/lib/crm/connection";
-import { FILTER_OPERATORS, buildSelect, type Filter } from "@/lib/crm/query";
+import { FILTER_OPERATORS, buildSelect, kindOf, type ColumnKind, type Filter } from "@/lib/crm/query";
 import { normalizePhone } from "@/lib/import/leads-csv";
 import { getAdminForApi } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
@@ -52,7 +52,9 @@ export async function POST(request: Request) {
   try {
     const result = await withCrm(b.id, async (client) => {
       const tables = await listTables(client, conn.source_schema);
-      const columns = (await listColumns(client, conn.source_schema, b.table)).map((c) => c.name);
+      const columnInfo = await listColumns(client, conn.source_schema, b.table);
+      const columns = columnInfo.map((c) => c.name);
+      const kinds: Record<string, ColumnKind> = Object.fromEntries(columnInfo.map((c) => [c.name, kindOf(c.type)]));
 
       const wanted = [...new Set([b.sourceIdColumn, ...Object.values(b.columnMap).filter(Boolean)])];
       const query = buildSelect({
@@ -61,6 +63,7 @@ export async function POST(request: Request) {
         columns: wanted,
         knownColumns: columns,
         knownTables: tables,
+        kinds,
         filters: b.filters as Filter[],
         excludeIds: excludeIds.length ? { column: b.sourceIdColumn, ids: excludeIds } : undefined,
         limit: b.limit,

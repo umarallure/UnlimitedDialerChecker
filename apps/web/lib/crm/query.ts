@@ -25,6 +25,34 @@ export type FilterOperator = keyof typeof FILTER_OPERATORS;
 
 export type Filter = { column: string; operator: FilterOperator; value?: string };
 
+/**
+ * How a value should be compared for a column of this type.
+ *
+ * Comparing as text is right for a stage name and wrong for anything ordered: as text,
+ * '2026-9-1' sorts after '2026-10-1', and 9 sorts after 10. So dates and numbers are compared
+ * as dates and numbers.
+ */
+export type ColumnKind = "text" | "date" | "number";
+
+export function kindOf(dataType: string): ColumnKind {
+  const t = dataType.toLowerCase();
+  if (t.includes("timestamp") || t === "date") return "date";
+  if (/^(smallint|integer|bigint|numeric|decimal|real|double precision)/.test(t)) return "number";
+  return "text";
+}
+
+function castFor(kind: ColumnKind): { left: (col: string) => string; right: (p: string) => string } {
+  switch (kind) {
+    case "date":
+      // A plain date means the whole day, so the right-hand side is cast, not the column.
+      return { left: (c) => c, right: (p) => `${p}::timestamptz` };
+    case "number":
+      return { left: (c) => c, right: (p) => `${p}::numeric` };
+    default:
+      return { left: (c) => `${c}::text`, right: (p) => p };
+  }
+}
+
 export type BuiltQuery = { text: string; values: unknown[] };
 
 /** Postgres identifier quoting: wrap in double quotes and double any inside. */
@@ -48,13 +76,19 @@ function assertKnown(name: string, known: string[]): string {
  * WHERE clause from the filters an operator chose. `known` is the column list read from the
  * source table, so a column that does not exist stops the query rather than reaching the database.
  */
-export function buildWhere(filters: Filter[], known: string[], startAt = 1): { sql: string; values: unknown[] } {
+export function buildWhere(
+  filters: Filter[],
+  known: string[],
+  startAt = 1,
+  kinds: Record<string, ColumnKind> = {},
+): { sql: string; values: unknown[] } {
   const parts: string[] = [];
   const values: unknown[] = [];
   let n = startAt;
 
   for (const f of filters) {
     const col = assertKnown(f.column, known);
+    const cast = castFor(kinds[f.column] ?? "text");
     const raw = (f.value ?? "").trim();
 
     switch (f.operator) {
@@ -90,9 +124,7 @@ export function buildWhere(filters: Filter[], known: string[], startAt = 1): { s
       case "lt":
       case "lte": {
         const op = { eq: "=", neq: "<>", gt: ">", gte: ">=", lt: "<", lte: "<=" }[f.operator];
-        // Compared as text so the same filter works on a date, a number or an enum without
-        // the operator having to know which it is.
-        parts.push(`${col}::text ${op} $${n++}`);
+        parts.push(`${cast.left(col)} ${op} ${cast.right(`$${n++}`)}`);
         values.push(raw);
         break;
       }
@@ -109,6 +141,8 @@ export type SelectOptions = {
   columns: string[];
   knownColumns: string[];
   knownTables: string[];
+  /** Column types, so a date range compares dates rather than the text they print as. */
+  kinds?: Record<string, ColumnKind>;
   filters: Filter[];
   /** Source ids already imported, excluded so a second run does not reload them. */
   excludeIds?: { column: string; ids: string[] };
@@ -125,7 +159,7 @@ export function buildSelect(o: SelectOptions): BuiltQuery {
   if (o.columns.length === 0) throw new Error("No columns were chosen to read.");
 
   const cols = o.columns.map((c) => assertKnown(c, o.knownColumns)).join(", ");
-  const where = buildWhere(o.filters, o.knownColumns);
+  const where = buildWhere(o.filters, o.knownColumns, 1, o.kinds ?? {});
   const values = [...where.values];
   let n = values.length + 1;
 

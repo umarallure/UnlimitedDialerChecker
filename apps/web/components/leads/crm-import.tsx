@@ -164,7 +164,7 @@ grant select on public.leads to udc_reader;`}</pre>
 
         <label className="flex flex-col gap-1">
           <span className="text-caption text-graphite">Name</span>
-          <input className={control} value={name} onChange={(e) => setName(e.target.value)} placeholder="Power Policies CRM" />
+          <input className={control} value={name} onChange={(e) => setName(e.target.value)} placeholder="Power Policies CRM" autoComplete="off" name="crm-label" />
         </label>
 
         <label className="flex flex-col gap-1">
@@ -172,6 +172,8 @@ grant select on public.leads to udc_reader;`}</pre>
           <input
             className={`${control} font-mono`}
             type="password"
+            autoComplete="new-password"
+            name="crm-connection"
             value={connectionString}
             onChange={(e) => setConnectionString(e.target.value)}
             placeholder="postgresql://udc_reader:…@aws-0-region.pooler.supabase.com:6543/postgres"

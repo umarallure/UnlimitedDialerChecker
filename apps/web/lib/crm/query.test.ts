@@ -99,3 +99,45 @@ describe("buildSelect", () => {
     expect(() => buildSelect({ ...base, columns: [] })).toThrow(/No columns/);
   });
 });
+
+describe("typed comparison", () => {
+  const kinds = { created_at: "date" as const, score: "number" as const, status: "text" as const };
+
+  it("compares a date column as a date, not as the text it prints as", () => {
+    const w = buildWhere([{ column: "created_at", operator: "gte", value: "2026-09-01" }], ["created_at"], 1, kinds);
+    expect(w.sql).toBe('where "created_at" >= $1::timestamptz');
+  });
+
+  it("compares a number column as a number, so 9 is not greater than 10", () => {
+    const w = buildWhere([{ column: "score", operator: "gt", value: "9" }], ["score"], 1, kinds);
+    expect(w.sql).toBe('where "score" > $1::numeric');
+  });
+
+  it("still compares text as text", () => {
+    const w = buildWhere([{ column: "status", operator: "eq", value: "new" }], ["status"], 1, kinds);
+    expect(w.sql).toBe('where "status"::text = $1');
+  });
+
+  it("falls back to text for a column whose type was not supplied", () => {
+    const w = buildWhere([{ column: "whatever", operator: "eq", value: "x" }], ["whatever"], 1, kinds);
+    expect(w.sql).toBe('where "whatever"::text = $1');
+  });
+
+  it("builds a date range as two bound parameters", () => {
+    const q = buildSelect({
+      schema: "public",
+      table: "leads",
+      columns: ["id"],
+      knownColumns: ["id", "created_at"],
+      knownTables: ["leads"],
+      kinds,
+      filters: [
+        { column: "created_at", operator: "gte", value: "2026-09-01" },
+        { column: "created_at", operator: "lte", value: "2026-09-30" },
+      ],
+      limit: 10,
+    });
+    expect(q.text).toContain('"created_at" >= $1::timestamptz and "created_at" <= $2::timestamptz');
+    expect(q.values).toEqual(["2026-09-01", "2026-09-30", 10]);
+  });
+});

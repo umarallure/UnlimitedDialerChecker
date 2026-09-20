@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { explainCrmError, listColumns, listTables, withCrm } from "@/lib/crm/connection";
-import { FILTER_OPERATORS, buildSelect, type Filter } from "@/lib/crm/query";
+import { distribute, type Target } from "@/lib/crm/distribute";
+import { FILTER_OPERATORS, buildSelect, kindOf, type ColumnKind, type Filter } from "@/lib/crm/query";
 import { normalizePhone } from "@/lib/import/leads-csv";
 import { getAdminForApi } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
@@ -19,8 +20,17 @@ const Body = z.object({
   filters: z.array(FilterSchema).max(20).default([]),
   skipImported: z.boolean().default(true),
   limit: z.number().int().min(1).max(20000).default(1000),
-  listId: z.number().int().positive(),
-  owner: z.string().max(20).optional(),
+  targets: z
+    .array(
+      z.object({
+        owner: z.string().max(20),
+        listId: z.number().int().positive(),
+        campaignId: z.string().max(20).nullable().optional(),
+        weight: z.number().min(0).max(100).optional(),
+      }),
+    )
+    .min(1)
+    .max(25),
   dncCheck: z.boolean().default(true),
   duplicateCheck: z.enum(["DUPLIST", "DUPCAMP", "DUPSYS", "NONE"]).default("DUPLIST"),
 });
@@ -47,8 +57,14 @@ export async function POST(request: Request) {
   const { data: conn } = await supabase.from("crm_connections").select("source_schema, name").eq("id", b.id).maybeSingle();
   if (!conn) return Response.json({ error: "That connection no longer exists." }, { status: 404 });
 
-  const { data: list } = await supabase.from("dialer_lists").select("list_id, campaign_id").eq("list_id", b.listId).maybeSingle();
-  if (!list) return Response.json({ error: "That list does not exist on the dialer." }, { status: 400 });
+  // Every destination list must exist, checked before a single lead is read.
+  const listIds = [...new Set(b.targets.map((t) => t.listId))];
+  const { data: lists } = await supabase.from("dialer_lists").select("list_id, campaign_id").in("list_id", listIds);
+  const listById = new Map((lists ?? []).map((l) => [l.list_id, l]));
+  const missing = listIds.filter((id) => !listById.has(id));
+  if (missing.length > 0) {
+    return Response.json({ error: `List ${missing.join(", ")} does not exist on the dialer.` }, { status: 400 });
+  }
 
   let excludeIds: string[] = [];
   if (b.skipImported) {
@@ -60,9 +76,12 @@ export async function POST(request: Request) {
   try {
     sourceRows = await withCrm(b.id, async (client) => {
       const tables = await listTables(client, conn.source_schema);
-      const columns = (await listColumns(client, conn.source_schema, b.table)).map((c) => c.name);
+      const columnInfo = await listColumns(client, conn.source_schema, b.table);
+      const columns = columnInfo.map((c) => c.name);
+      const kinds: Record<string, ColumnKind> = Object.fromEntries(columnInfo.map((c) => [c.name, kindOf(c.type)]));
       const wanted = [...new Set([b.sourceIdColumn, ...Object.values(b.columnMap).filter(Boolean)])];
       const query = buildSelect({
+        kinds,
         schema: conn.source_schema,
         table: b.table,
         columns: wanted,
@@ -116,24 +135,45 @@ export async function POST(request: Request) {
     return Response.json({ error: unusable > 0 ? `None of the ${unusable} rows had a usable phone number.` : "No rows matched those filters." }, { status: 400 });
   }
 
+  const first = b.targets[0];
   const { data: job, error: jobError } = await supabase
     .from("lead_imports")
-    .insert({ list_id: b.listId, owner: b.owner ?? null, source: "crm", file_name: `${conn.name} · ${b.table}`, total: leads.length, created_by: admin.email })
+    .insert({
+      list_id: first.listId,
+      owner: b.targets.length === 1 ? first.owner : `${b.targets.length} agents`,
+      source: "crm",
+      file_name: `${conn.name} · ${b.table}`,
+      total: leads.length,
+      created_by: admin.email,
+    })
     .select("id")
     .single();
   if (jobError || !job) return Response.json({ error: jobError?.message ?? "Could not start the import." }, { status: 500 });
 
-  const chunks: Record<string, string>[][] = [];
-  for (let i = 0; i < leads.length; i += CHUNK) chunks.push(leads.slice(i, i + CHUNK));
+  const shares = distribute(leads, b.targets as Target[]);
+  const rows: Record<string, unknown>[] = [];
 
-  const { error: cmdError } = await supabase.from("commands").insert(
-    chunks.map((batch) => ({
-      type: "add_leads",
-      import_id: job.id,
-      created_by: admin.email,
-      payload: { listId: b.listId, owner: b.owner, campaignId: list.campaign_id, dncCheck: b.dncCheck, duplicateCheck: b.duplicateCheck, leads: batch },
-    })),
-  );
+  for (const share of shares) {
+    if (share.items.length === 0) continue;
+    const campaignId = share.target.campaignId ?? listById.get(share.target.listId)?.campaign_id ?? null;
+    for (let i = 0; i < share.items.length; i += CHUNK) {
+      rows.push({
+        type: "add_leads",
+        import_id: job.id,
+        created_by: admin.email,
+        payload: {
+          listId: share.target.listId,
+          owner: share.target.owner,
+          campaignId,
+          dncCheck: b.dncCheck,
+          duplicateCheck: b.duplicateCheck,
+          leads: share.items.slice(i, i + CHUNK),
+        },
+      });
+    }
+  }
+
+  const { error: cmdError } = await supabase.from("commands").insert(rows);
   if (cmdError) {
     await supabase.from("lead_imports").update({ finished_at: new Date().toISOString(), failed: leads.length }).eq("id", job.id);
     return Response.json({ error: cmdError.message }, { status: 500 });
@@ -150,5 +190,11 @@ export async function POST(request: Request) {
     .update({ source_table: b.table, column_map: b.columnMap, filters: b.filters, last_import_at: new Date().toISOString(), status: "ok", last_error: null })
     .eq("id", b.id);
 
-  return Response.json({ importId: job.id, total: leads.length, commands: chunks.length, unusable });
+  return Response.json({
+    importId: job.id,
+    total: leads.length,
+    commands: rows.length,
+    unusable,
+    split: shares.map((s) => ({ owner: s.target.owner, listId: s.target.listId, leads: s.items.length })),
+  });
 }
