@@ -1,5 +1,4 @@
 import { CrmImport, type Connection } from "@/components/leads/crm-import";
-import { CrmImportLauncher } from "@/components/leads/crm-import-launcher";
 import { LeadImportForm } from "@/components/leads/import-form";
 import { Alert, DataTable, EmptyRow, PageHeader, Panel, StatusPill } from "@/components/ui";
 import { requireAdmin } from "@/lib/dal";
@@ -54,8 +53,7 @@ export default async function LeadImportPage() {
         subtitle="Read leads straight out of another database, filtered, without exporting a file."
         bodyClassName="px-6 pb-6"
       >
-        <CrmImport connection={(crm as Connection | null) ?? null} lists={lists ?? []} agents={agents ?? []} />
-        {crm?.source_table && <CrmImportLauncher connectionId={crm.id} table={crm.source_table} agents={agentTargets} />}
+        <CrmImport connection={(crm as Connection | null) ?? null} agents={agentTargets} />
       </Panel>
 
       <Panel title="Recent imports" subtitle="Newest first." bodyClassName="px-2 pb-2">
