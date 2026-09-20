@@ -103,10 +103,10 @@ export default async function CampaignsPage() {
               return (
                 <tr key={c.campaign_id}>
                   <td>
-                    <span className="flex flex-col">
+                    <Link href={`/campaigns/${c.campaign_id}`} className="flex flex-col hover:underline">
                       <span className="font-semibold text-ink">{c.campaign_id}</span>
                       <span className="text-legal text-muted">{c.active ? `synced ${relative(c.synced_at)}` : "Not active"}</span>
-                    </span>
+                    </Link>
                   </td>
                   <td>
                     <span className="flex flex-col">

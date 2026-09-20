@@ -77,6 +77,10 @@ async function execute(cmd: CommandRow, api: VicidialApi | null, pool: Pool): Pr
       // themselves. The result lists exactly how far it got.
       return { ok: out.ok, retryable: false, result: { user: a.user, campaignId: a.campaignId, steps: out.steps } };
     }
+    case "update_leads": {
+      if (!api) return { ok: false, result: { error: "No VICIdial API credentials configured on the dialer" } };
+      return updateLeads(cmd, api);
+    }
     case "resync":
       // Handled by the sync loops; queuing it just marks the request.
       return { ok: true, result: { note: "Sync loops run on their own schedule" } };
@@ -169,6 +173,53 @@ async function addLeads(cmd: CommandRow, api: VicidialApi): Promise<CommandOutco
   // Duplicates and DNC hits are expected outcomes, so the command only fails when nothing landed
   // and something genuinely broke.
   return { ok: !(added === 0 && failed > 0), result: { added, duplicates, failed, rows } };
+}
+
+type UpdateLeadsPayload = {
+  leadIds: number[];
+  /** Any of these that is present is changed; the rest are left alone. */
+  set: { status?: string; owner?: string | null; listId?: number };
+};
+
+/**
+ * Moves, reassigns or re-queues leads.
+ *
+ * VICIdial has no delete_lead, and that is no bad thing: a deleted lead takes its call history
+ * with it. Taking leads out of a campaign means moving them to another list or giving them a
+ * status the campaign does not dial, both of which this does, and both of which are reversible.
+ */
+async function updateLeads(cmd: CommandRow, api: VicidialApi): Promise<CommandOutcome> {
+  const p = cmd.payload as unknown as UpdateLeadsPayload;
+  if (!Array.isArray(p?.leadIds) || p.leadIds.length === 0) {
+    return { ok: false, retryable: false, result: { error: "No leads were named" } };
+  }
+  if (!p.set || (p.set.status === undefined && p.set.owner === undefined && p.set.listId === undefined)) {
+    return { ok: false, retryable: false, result: { error: "Nothing to change" } };
+  }
+
+  let changed = 0;
+  const failures: Array<{ leadId: number; error: string }> = [];
+
+  for (const leadId of p.leadIds) {
+    const res = await api.call("update_lead", {
+      lead_id: leadId,
+      search_method: "LEAD_ID",
+      status: p.set.status,
+      // An empty owner clears it, which is how a lead goes back to the whole campaign.
+      owner: p.set.owner === null ? "" : p.set.owner,
+      list_id_field: p.set.listId,
+    });
+
+    if (res.ok) changed++;
+    else failures.push({ leadId, error: res.error });
+  }
+
+  return {
+    ok: failures.length === 0,
+    // Every lead was attempted, so a retry would repeat the ones that worked.
+    retryable: false,
+    result: { changed, failed: failures.length, failures: failures.slice(0, 20), set: p.set },
+  };
 }
 
 type UpdateCampaignPayload = {
