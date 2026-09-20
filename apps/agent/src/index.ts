@@ -1,13 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 import { loadConfig } from "./config";
 import { syncCampaignDays, syncCampaigns, syncReferenceData } from "./campaigns";
+import { syncCallStats, syncCampaignStatuses } from "./call-stats";
 import { syncLeads } from "./leads";
 import { processCommands } from "./commands";
 import { runRotation } from "./rotation";
 import { syncLive, syncStats } from "./sync";
 import { createPool } from "./vicidial";
 
-const VERSION = "0.13.0";
+const VERSION = "0.14.0";
 
 function log(level: "info" | "error", msg: string, extra?: unknown) {
   const line = `${new Date().toISOString()} ${level.toUpperCase()} ${msg}`;
@@ -72,7 +73,9 @@ async function main() {
     await syncCampaignDays(db, pool, cfg.recentCallDays);
     await syncReferenceData(db, pool);
     await syncLeads(db, pool);
-    return `${r.callsToday} call(s) today across ${r.callerIds} caller ID(s), ${r.feed} feed row(s) upserted, ${r.recordings} recording(s) linked, ${campaigns} campaign(s) synced`;
+    const stats = await syncCallStats(db, pool, cfg.recentCallDays);
+    await syncCampaignStatuses(db, pool);
+    return `${r.callsToday} call(s) today across ${r.callerIds} caller ID(s), ${r.feed} feed row(s) upserted, ${r.recordings} recording(s) linked, ${campaigns} campaign(s) synced, ${stats} report row(s)`;
   });
 
   const stopRotation = loop("rotation", cfg.rotationIntervalMs, async () => {

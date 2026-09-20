@@ -334,3 +334,66 @@ export function Pagination({
     </nav>
   );
 }
+
+/**
+ * Waiting states.
+ *
+ * A report that reaches back weeks takes a moment to add up. Leaving the old figures on screen
+ * while new ones are fetched is the dangerous version of that wait: a manager reads numbers that
+ * no longer answer the question they just asked. So the panel that is being recalculated says so.
+ */
+export function Spinner({ className, label = "Loading" }: { className?: string; label?: string }) {
+  return (
+    <span role="status" aria-label={label} className={cx("inline-block", className)}>
+      <svg viewBox="0 0 24 24" aria-hidden className={cx("size-5 animate-spin text-muted", className)} fill="none">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2.5" />
+        <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
+
+/** Placeholder for a panel whose contents are still being worked out. */
+export function LoadingPanel({ title, lines = 3, className }: { title: string; lines?: number; className?: string }) {
+  return (
+    <Panel
+      title={title}
+      subtitle={
+        <span className="flex items-center gap-2">
+          <Spinner className="size-4" /> Working it out…
+        </span>
+      }
+      className={className}
+      bodyClassName="flex flex-col gap-3 px-6 pb-6"
+    >
+      {Array.from({ length: lines }, (_, i) => (
+        <span key={i} className="h-11 animate-pulse rounded-md bg-surface-alt" />
+      ))}
+    </Panel>
+  );
+}
+
+/** Placeholder row of KPI cards, the same shape as the real ones so nothing jumps. */
+export function LoadingKpis({ count = 4 }: { count?: number }) {
+  return (
+    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-6">
+          <span className="h-4 w-24 animate-pulse rounded bg-surface-alt" />
+          <span className="h-10 w-20 animate-pulse rounded bg-surface-alt" />
+          <span className="h-3 w-28 animate-pulse rounded bg-surface-alt" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A horizontal proportion bar, for shares inside a table row. */
+export function ShareBar({ pct, tone = "neutral" }: { pct: number; tone?: Tone }) {
+  const fill = { neutral: "bg-graphite", success: "bg-success", warning: "bg-warning", error: "bg-error", accent: "bg-primary" }[tone];
+  return (
+    <span className="flex h-1.5 w-full min-w-16 overflow-hidden rounded-full bg-surface-alt">
+      <span className={cx("h-full rounded-full", fill)} style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
+    </span>
+  );
+}
