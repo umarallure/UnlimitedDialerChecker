@@ -16,6 +16,8 @@ export type PolicySettings = {
   softCool: { answerRateDropPts: number; shortCallPctFrom: number };
   coolingDays: number;
   reentryDailyCap: number;
+  /** Gate warm-up on a clean reputation scan. Turn off while no reputation provider is connected. */
+  requireCleanReputation: boolean;
   retireIfLabeledAtDay: number;
 };
 
@@ -29,6 +31,7 @@ export const DEFAULT_POLICY: PolicySettings = {
   softCool: { answerRateDropPts: 0.05, shortCallPctFrom: 0.2 },
   coolingDays: 14,
   reentryDailyCap: 25,
+  requireCleanReputation: true,
   retireIfLabeledAtDay: 30,
 };
 
@@ -95,8 +98,9 @@ export function nextTransition(did: DidSnapshot, h: HealthWindow | null, p: Poli
 
   switch (did.lifecycle) {
     case "NEW":
-      if (did.daysInState >= p.agingDays && did.fcrRegistered && did.inboundRouteOk && did.latestLabelClean === true) {
-        return { to: "WARMING", reason: "aged, registered, callback route and reputation verified" };
+      if (did.daysInState >= p.agingDays && did.fcrRegistered && did.inboundRouteOk && reputationOk(did, p)) {
+        const how = p.requireCleanReputation ? "reputation verified" : "reputation checks off";
+        return { to: "WARMING", reason: `aged, registered, callback route and ${how}` };
       }
       return null;
     case "WARMING":
@@ -114,13 +118,22 @@ export function nextTransition(did: DidSnapshot, h: HealthWindow | null, p: Poli
       if (did.daysInState >= p.retireIfLabeledAtDay && did.latestLabelClean === false) {
         return { to: "RETIRED", reason: `still labeled after ${p.retireIfLabeledAtDay} days` };
       }
-      if (did.daysInState >= p.coolingDays && did.latestLabelClean === true) {
-        return { to: "WARMING", reason: "cool-off complete and reputation clean" };
+      if (did.daysInState >= p.coolingDays && reputationOk(did, p)) {
+        return { to: "WARMING", reason: p.requireCleanReputation ? "cool-off complete and reputation clean" : "cool-off complete, reputation checks off" };
       }
       return null;
     default:
       return null;
   }
+}
+
+/**
+ * May this number move towards dialing, reputation-wise?
+ * With checks required, only a clean scan passes. With checks off — no provider connected —
+ * a number that has never been scanned may proceed, but a known bad label still blocks it.
+ */
+function reputationOk(did: DidSnapshot, p: PolicySettings): boolean {
+  return p.requireCleanReputation ? did.latestLabelClean === true : did.latestLabelClean !== false;
 }
 
 function pct(n: number): string {

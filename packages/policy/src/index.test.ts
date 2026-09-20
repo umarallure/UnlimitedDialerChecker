@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dailyCap, nextTransition, shouldDial, type DidSnapshot, type HealthWindow } from "./index";
+import { DEFAULT_POLICY, dailyCap, nextTransition, shouldDial, type DidSnapshot, type HealthWindow } from "./index";
 
 const base: DidSnapshot = {
   lifecycle: "NEW",
@@ -67,5 +67,33 @@ describe("nextTransition", () => {
     expect(nextTransition({ ...base, lifecycle: "COOLING", daysInState: 14 }, null)?.to).toBe("WARMING");
     expect(nextTransition({ ...base, lifecycle: "COOLING", daysInState: 14, latestLabelClean: false }, null)).toBeNull();
     expect(nextTransition({ ...base, lifecycle: "COOLING", daysInState: 30, latestLabelClean: false }, null)?.to).toBe("RETIRED");
+  });
+});
+
+describe("reputation gate", () => {
+  const off = { ...DEFAULT_POLICY, requireCleanReputation: false };
+  const aged = { ...base, daysInState: 8 };
+
+  it("blocks an unscanned number while checks are required", () => {
+    expect(nextTransition({ ...aged, latestLabelClean: null }, null)).toBeNull();
+  });
+
+  it("lets an unscanned number warm up once checks are turned off", () => {
+    const t = nextTransition({ ...aged, latestLabelClean: null }, null, off);
+    expect(t?.to).toBe("WARMING");
+    expect(t?.reason).toContain("reputation checks off");
+  });
+
+  it("still blocks a known bad label with checks off", () => {
+    expect(nextTransition({ ...aged, latestLabelClean: false }, null, off)).toBeNull();
+    expect(nextTransition({ ...base, lifecycle: "COOLING", daysInState: 15, latestLabelClean: false }, null, off)).toBeNull();
+  });
+
+  it("returns an unscanned cooled number to warm-up with checks off", () => {
+    expect(nextTransition({ ...base, lifecycle: "COOLING", daysInState: 15, latestLabelClean: null }, null, off)?.to).toBe("WARMING");
+  });
+
+  it("still retires a number labeled for 30 days, whatever the gate says", () => {
+    expect(nextTransition({ ...base, lifecycle: "COOLING", daysInState: 31, latestLabelClean: false }, null, off)?.to).toBe("RETIRED");
   });
 });

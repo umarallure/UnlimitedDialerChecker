@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ArrowRight, Eye, Hash, ListChecks, Repeat } from "lucide-react";
 import { RunPreviewButton } from "@/components/rotation/run-button";
 import { Alert, DataTable, EmptyRow, KpiCard, Metric, PageHeader, Panel, StatusPill } from "@/components/ui";
@@ -40,6 +41,7 @@ export default async function RotationPage() {
   const inRotation = (pool ?? []).filter((d) => d.lifecycle === "ACTIVE" || d.lifecycle === "WARMING").length;
   // A number may not start warming until a reputation scan says it is clean, so an unscanned
   // pool would sit in aging for ever. Say so rather than letting the engine look stuck.
+  const gateOn = p.requireCleanReputation !== false;
   const everScanned = new Set((scanned ?? []).map((r) => r.did_id));
   const unscanned = (pool ?? []).filter((d) => d.lifecycle === "NEW" && !everScanned.has(d.id)).length;
 
@@ -47,7 +49,11 @@ export default async function RotationPage() {
     <>
       <PageHeader
         title="Rotation"
-        description="The lifecycle engine ages, warms, rests and retires each number against the policy below. It is running in preview: it records what it would do without touching the dialer."
+        description={
+          enforcing
+            ? "The lifecycle engine ages, warms, rests and retires each number against the policy below, and applies those changes on the dialer."
+            : "The lifecycle engine ages, warms, rests and retires each number against the policy below. It is running in preview: it records what it would do without touching the dialer."
+        }
         action={<RunPreviewButton />}
       />
 
@@ -68,8 +74,17 @@ export default async function RotationPage() {
 
       {unscanned > 0 && (
         <Alert tone="warning">
-          {unscanned} aging number{unscanned === 1 ? " has" : "s have"} never been checked for spam labels. The engine will not start warming a number until a reputation scan
-          comes back clean, so {unscanned === 1 ? "it stays" : "they stay"} in aging until reputation checks are connected.
+          {gateOn ? (
+            <>
+              {unscanned} aging number{unscanned === 1 ? " has" : "s have"} never been checked for spam labels, and the engine will not start warming a number until a scan comes
+              back clean. Turn the check off in <Link href="/settings?tab=rotation">Settings → Rotation</Link> until a reputation provider is connected.
+            </>
+          ) : (
+            <>
+              Reputation checks are off, so numbers warm up without a spam-label check. A known spam or scam label still holds a number back. Turn the check back on in{" "}
+              <Link href="/settings?tab=rotation">Settings → Rotation</Link> once My Call Score is connected.
+            </>
+          )}
         </Alert>
       )}
 

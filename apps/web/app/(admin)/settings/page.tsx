@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { NotificationForm, type NotificationSettings } from "@/components/settings/notification-form";
+import { ReputationGateForm } from "@/components/settings/reputation-gate-form";
 import { Alert, DataTable, EmptyRow, PageHeader, Panel, StatusPill } from "@/components/ui";
 import { requireAdmin } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
 import { formatDateTime, isFresh, relative } from "@/lib/time";
 
-const TABS = ["notifications", "health", "dialer", "admins"] as const;
+const TABS = ["notifications", "health", "rotation", "dialer", "admins"] as const;
 type Tab = (typeof TABS)[number];
-const TAB_LABEL: Record<Tab, string> = { notifications: "Notifications", health: "Health checks", dialer: "Dialer sync", admins: "Admins" };
+const TAB_LABEL: Record<Tab, string> = { notifications: "Notifications", health: "Health checks", rotation: "Rotation", dialer: "Dialer sync", admins: "Admins" };
 
 const HEARTBEAT_STALE_MS = 20 * 60_000;
 
@@ -21,6 +22,8 @@ type Policy = {
   hardCool: { minAnswerRate3d: number; maxShortCallPct: number; maxDropPct: number; sip608Spike: number };
   softCool: { answerRateDropPts: number; shortCallPctFrom: number };
   retireIfLabeledAtDay: number;
+  /** Absent on policies written before the gate became a setting; treated as on. */
+  requireCleanReputation?: boolean;
 };
 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
@@ -31,17 +34,19 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
   const tab: Tab = (TABS as readonly string[]).includes(String(sp.tab)) ? (sp.tab as Tab) : "notifications";
 
   const supabase = await createClient();
-  const [settings, emails, policy, dialers, admins] = await Promise.all([
+  const [settings, emails, policy, dialers, admins, scans] = await Promise.all([
     supabase.from("notification_settings").select("recipients, immediate_enabled, digest_enabled, digest_hour_et, last_run_at, last_error").maybeSingle(),
     supabase.from("notification_log").select("kind, status, subject, error, sent_at, recipients").order("sent_at", { ascending: false }).limit(10),
     supabase.from("policies").select("enforcement_mode, settings, updated_at, updated_by").eq("is_active", true).maybeSingle(),
     supabase.from("dialers").select("name, status, agent_version, last_heartbeat_at, created_at").order("name"),
     supabase.from("admins").select("email, created_at").order("created_at"),
+    supabase.from("reputation_checks").select("did_id"),
   ]);
 
   const s = settings.data;
   const p = policy.data?.settings as Policy | undefined;
   const enforcing = policy.data?.enforcement_mode === "enforce";
+  const scannedNumbers = new Set((scans.data ?? []).map((r) => r.did_id)).size;
 
   return (
     <>
@@ -165,6 +170,24 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
             ) : (
               <Alert>Couldn’t load the lifecycle settings.</Alert>
             )}
+          </Panel>
+        </div>
+      )}
+
+      {tab === "rotation" && (
+        <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <Panel title="Reputation checks" subtitle="What the lifecycle engine needs before a number may start dialing." bodyClassName="px-6 pb-6">
+            {p ? <ReputationGateForm required={p.requireCleanReputation !== false} scannedNumbers={scannedNumbers} /> : <Alert>Couldn’t load the rotation policy.</Alert>}
+          </Panel>
+
+          <Panel title="Where this applies" bodyClassName="flex flex-col gap-3 px-6 pb-6 text-caption text-graphite">
+            <p>
+              The gate is checked twice in a number’s life: when it leaves aging for warm-up, and when it comes back from a cool-off. Everything else — caps, warm-up steps,
+              cooling on a bad answer rate — is unaffected.
+            </p>
+            <p>
+              The engine itself is still in <strong className="text-ink">dry run</strong>: it records what it would do without changing the dialer. See <Link href="/rotation" className="text-ink hover:underline">Rotation</Link> for the decisions it is making.
+            </p>
           </Panel>
         </div>
       )}
