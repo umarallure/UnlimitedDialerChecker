@@ -1,4 +1,4 @@
-import { NewAgentForm } from "@/components/agents/new-agent-form";
+import { AddAgentButton } from "@/components/agents/add-agent-button";
 import { DataTable, EmptyRow, PageHeader, Panel, StatusPill } from "@/components/ui";
 import { requireAdmin } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
@@ -23,11 +23,14 @@ export default async function AgentsPage() {
 
   return (
     <>
-      <PageHeader title="Agents" description="VICIdial agent states, synced from the dialer every 15 minutes." />
+      <PageHeader
+        title="Agents"
+        description="VICIdial agent states, synced from the dialer every 15 minutes."
+        action={<AddAgentButton nextListId={highest + 1} />}
+      />
       <AgentsBoard />
 
-      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <Panel title="Everyone on the dialer" subtitle="Agent accounts and the campaign each one may use." bodyClassName="px-2 pb-2">
+      <Panel title="Everyone on the dialer" subtitle="Agent accounts and the campaign each one may use." bodyClassName="px-2 pb-2">
           <DataTable head={["Agent", "Name", "Group", "Lists", "Status"]} minWidth={620} bare>
             {(users ?? []).length === 0 ? (
               <EmptyRow colSpan={5}>No agents have synced yet.</EmptyRow>
@@ -51,12 +54,7 @@ export default async function AgentsPage() {
               })
             )}
           </DataTable>
-        </Panel>
-
-        <Panel title="Add an agent" subtitle="Account, campaign and list in one go." bodyClassName="px-6 pb-6">
-          <NewAgentForm nextListId={highest + 1} />
-        </Panel>
-      </div>
+      </Panel>
     </>
   );
 }

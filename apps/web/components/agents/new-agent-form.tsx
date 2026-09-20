@@ -18,7 +18,7 @@ function campaignIdFor(user: string): string {
  * Creates an agent with everything they need: their own campaign, their own list, and a user
  * group that admits them to that campaign alone.
  */
-export function NewAgentForm({ nextListId }: { nextListId: number }) {
+export function NewAgentForm({ nextListId, onDone }: { nextListId: number; onDone?: () => void }) {
   const router = useRouter();
   const [user, setUser] = useState("");
   const [fullName, setFullName] = useState("");
@@ -77,6 +77,7 @@ export function NewAgentForm({ nextListId }: { nextListId: number }) {
         setCampaignId("");
         setListId(listId + 1);
         router.refresh();
+        onDone?.();
       } else {
         const failed = result.steps?.find((s) => !s.ok);
         toast.error("Not finished", { description: failed?.detail ?? result.error ?? "See the steps below." });
@@ -95,18 +96,18 @@ export function NewAgentForm({ nextListId }: { nextListId: number }) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1">
           <span className="text-caption text-graphite">Username</span>
-          <input className={control} value={user} onChange={(e) => setUser(e.target.value)} placeholder="agent4" />
+          <input className={control} value={user} onChange={(e) => setUser(e.target.value)} placeholder="agent4" autoComplete="off" name="vicidial-user" />
           <span className="text-legal text-muted">Letters, numbers and underscores.</span>
         </label>
 
         <label className="flex flex-col gap-1">
           <span className="text-caption text-graphite">Full name</span>
-          <input className={control} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Alex Doe" />
+          <input className={control} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Alex Doe" autoComplete="off" name="vicidial-full-name" />
         </label>
 
         <label className="flex flex-col gap-1">
           <span className="text-caption text-graphite">Password</span>
-          <input className={control} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="at least 8 characters" />
+          <input className={control} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="at least 8 characters" autoComplete="new-password" name="vicidial-password" />
           <span className="text-legal text-muted">Set by you and given to the agent; it is not stored in this app.</span>
         </label>
 
