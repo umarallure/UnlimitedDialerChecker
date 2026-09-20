@@ -1,10 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { loadConfig } from "./config";
+import { syncCampaigns } from "./campaigns";
 import { runRotation } from "./rotation";
 import { syncLive, syncStats } from "./sync";
 import { createPool } from "./vicidial";
 
-const VERSION = "0.2.0";
+const VERSION = "0.3.0";
 
 function log(level: "info" | "error", msg: string, extra?: unknown) {
   const line = `${new Date().toISOString()} ${level.toUpperCase()} ${msg}`;
@@ -65,7 +66,8 @@ async function main() {
 
   const stopStats = loop("stats", cfg.statsIntervalMs, async () => {
     const r = await syncStats(db, pool, cfg, statsState);
-    return `${r.callsToday} call(s) today across ${r.callerIds} caller ID(s), ${r.feed} feed row(s) upserted`;
+    const campaigns = await syncCampaigns(db, pool);
+    return `${r.callsToday} call(s) today across ${r.callerIds} caller ID(s), ${r.feed} feed row(s) upserted, ${campaigns} campaign(s) synced`;
   });
 
   const stopRotation = loop("rotation", cfg.rotationIntervalMs, async () => {
