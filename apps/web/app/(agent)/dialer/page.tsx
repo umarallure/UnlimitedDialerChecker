@@ -1,3 +1,4 @@
+import { AudioCheck } from "@/components/dialer/audio-check";
 import { CallBar, type Disposition } from "@/components/dialer/call-bar";
 import { requireAgent } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
@@ -41,5 +42,10 @@ export default async function DialerPage() {
     // Sale first, then callbacks, then the rest: the order an agent reaches for them.
     .sort((a, b) => Number(b.sale) - Number(a.sale) || Number(b.callback) - Number(a.callback) || a.name.localeCompare(b.name));
 
-  return <CallBar dispositions={dispositions} />;
+  return (
+    <>
+      <AudioCheck />
+      <CallBar dispositions={dispositions} />
+    </>
+  );
 }

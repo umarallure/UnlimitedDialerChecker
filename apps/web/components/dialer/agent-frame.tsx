@@ -31,6 +31,7 @@ export function AgentFrame() {
       </button>
 
       <iframe
+        id="vicidial-session"
         title="VICIdial agent session"
         src="/api/agent/frame"
         // The microphone is the point: the webphone is WebRTC and lives in this frame.
