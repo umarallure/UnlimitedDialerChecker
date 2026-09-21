@@ -37,8 +37,16 @@ export function AgentFrame() {
         id="vicidial-session"
         title="VICIdial agent session"
         src="/api/agent/frame"
-        // The microphone is the point: the webphone is WebRTC and lives in this frame.
-        allow="microphone; autoplay"
+        /*
+         * The microphone is the point: the webphone is WebRTC and lives two frames down — this
+         * one holds the agent screen, which holds CyburPhone. Permissions only travel as far as
+         * each container allows, so anything withheld here is withheld from the phone.
+         *
+         * The origins are wildcarded to match what VICIdial's own nested frame asks for
+         * (`microphone *`). Narrowing to the default 'src' would rely on the two frames staying
+         * same-origin, which is VICIdial's business to change, not ours.
+         */
+        allow="microphone *; autoplay *; speaker-selection *"
         className="w-full border-0 bg-surface"
         style={{ height: open ? 620 : 1 }}
       />
