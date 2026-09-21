@@ -1,4 +1,5 @@
 import { AddAgentButton } from "@/components/agents/add-agent-button";
+import { DialerAccessButton } from "@/components/agents/dialer-access-button";
 import { DataTable, EmptyRow, PageHeader, Panel, StatusPill } from "@/components/ui";
 import { requireAdmin } from "@/lib/dal";
 import { createClient } from "@/lib/supabase/server";
@@ -16,15 +17,24 @@ export default async function AgentsPage() {
   await requireAdmin();
   const supabase = await createClient();
 
-  const [{ data: users }, { data: lists }, { data: groups }] = await Promise.all([
+  const [{ data: users }, { data: lists }, { data: groups }, { data: access }] = await Promise.all([
     supabase.from("dialer_users").select("user_name, full_name, user_level, user_group, active").lte("user_level", 7).order("user_name"),
     supabase.from("dialer_lists").select("list_id, list_name, campaign_id, leads").order("list_id"),
     supabase.from("dialer_user_groups").select("user_group, allowed_campaigns"),
+    supabase.from("app_agents").select("email, agent_user, phone_login, campaign_id, active").order("email"),
   ]);
 
   const highest = (lists ?? []).reduce((n, l) => Math.max(n, l.list_id), 300);
   // So a suggested campaign id cannot collide with one that already exists.
   const takenCampaigns = [...new Set((lists ?? []).map((l) => l.campaign_id).filter((c): c is string => Boolean(c)))];
+  // Each agent with their own campaign, for the dialer-access form.
+  const dialerAccessChoices = (users ?? [])
+    .filter((u) => u.active)
+    .map((u) => {
+      const allowed = campaignsFor((groups ?? []).find((g) => g.user_group === u.user_group)?.allowed_campaigns);
+      return { user_name: u.user_name, full_name: u.full_name ?? null, campaign_id: allowed.ids.find((c) => c.startsWith("AG_")) ?? allowed.ids[0] ?? null };
+    });
+
   const allowedByGroup = new Map((groups ?? []).map((g) => [g.user_group, campaignsFor(g.allowed_campaigns)]));
 
   const listsByCampaign = new Map<string, { list_id: number; leads: number }[]>();
@@ -38,9 +48,38 @@ export default async function AgentsPage() {
       <PageHeader
         title="Agents"
         description="VICIdial agent states, synced from the dialer every 15 minutes."
-        action={<AddAgentButton nextListId={highest + 1} takenCampaigns={takenCampaigns} />}
+        action={
+          <>
+            <DialerAccessButton agents={dialerAccessChoices} />
+            <AddAgentButton nextListId={highest + 1} takenCampaigns={takenCampaigns} />
+          </>
+        }
       />
       <AgentsBoard />
+
+      <Panel
+        title="Dialer access"
+        subtitle="Who can sign in here and land on their own dialer screen instead of the admin tool."
+        bodyClassName="px-2 pb-2"
+      >
+        <DataTable head={["Signs in as", "VICIdial agent", "Phone", "Campaign", "Status"]} minWidth={720} bare>
+          {(access ?? []).length === 0 ? (
+            <EmptyRow colSpan={5}>Nobody has dialer access yet.</EmptyRow>
+          ) : (
+            (access ?? []).map((a) => (
+              <tr key={a.email}>
+                <td className="font-semibold !text-ink">{a.email}</td>
+                <td>{a.agent_user}</td>
+                <td className="tabular-nums">{a.phone_login}</td>
+                <td>{a.campaign_id ? <StatusPill>{a.campaign_id}</StatusPill> : <span className="text-muted">—</span>}</td>
+                <td>
+                  <StatusPill tone={a.active ? "success" : "neutral"}>{a.active ? "Active" : "Disabled"}</StatusPill>
+                </td>
+              </tr>
+            ))
+          )}
+        </DataTable>
+      </Panel>
 
       <Panel title="Everyone on the dialer" subtitle="Agent accounts, the campaigns they may use, and the leads waiting in them." bodyClassName="px-2 pb-2">
         <DataTable head={["Agent", "Name", "Group", "Campaigns", "Leads waiting", "Status"]} minWidth={860} bare>
