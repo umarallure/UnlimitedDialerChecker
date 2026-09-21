@@ -227,9 +227,9 @@ export async function syncReferenceData(db: SupabaseClient, pool: Pool): Promise
     removed += data?.length ?? 0;
   };
 
-  await prune("dialer_lists", "list_id", listRows.map((r) => Number(r.list_id)));
-  await prune("dialer_users", "user_id", userRows.map((r) => Number(r.user_id)));
-  await prune("dialer_user_groups", "user_group", groupRows.map((r) => String(r.user_group)));
+  await prune("vici_lists", "list_id", listRows.map((r) => Number(r.list_id)));
+  await prune("vici_users", "user_id", userRows.map((r) => Number(r.user_id)));
+  await prune("vici_user_groups", "user_group", groupRows.map((r) => String(r.user_group)));
 
   return { lists: listRows.length, users: userRows.length, groups: groupRows.length, removed };
 }

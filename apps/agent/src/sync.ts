@@ -27,7 +27,7 @@ export async function syncLive(db: SupabaseClient, pool: Pool, cfg: Config, vers
   if (agents.length > 0) {
     await upsertInBatches(
       db,
-      "agents_live",
+      "vici_agents_live",
       agents.map((a) => ({
         agent_user: a.user,
         full_name: a.fullName,
@@ -47,7 +47,7 @@ export async function syncLive(db: SupabaseClient, pool: Pool, cfg: Config, vers
   const present = agents.map((a) => a.user);
   const del = db.from("vici_agents_live").delete();
   await check(
-    "prune agents_live",
+    "prune vici_agents_live",
     present.length ? del.not("agent_user", "in", `(${present.map((u) => `"${u.replace(/"/g, "")}"`).join(",")})`) : del.neq("agent_user", ""),
   );
 
@@ -93,7 +93,7 @@ export async function syncStats(db: SupabaseClient, pool: Pool, cfg: Config, sta
   if (seen.size) {
     await upsertInBatches(
       db,
-      "dids",
+      "vici_dids",
       [...seen].map((e164) => ({ e164, notes: "Seen on dialer, not imported" })),
       "e164",
       true,
@@ -107,7 +107,7 @@ export async function syncStats(db: SupabaseClient, pool: Pool, cfg: Config, sta
   const updatedAt = now.toISOString();
   await upsertInBatches(
     db,
-    "did_stats_live",
+    "vici_did_stats_live",
     dids.map((d) => {
       const c = aggToday.get(d.e164);
       return {
@@ -130,11 +130,11 @@ export async function syncStats(db: SupabaseClient, pool: Pool, cfg: Config, sta
     ...dailyRows(aggToday, localDay(today), idByE164),
     ...dailyRows(aggYesterday, localDay(yesterday), idByE164),
   ];
-  if (daily.length) await upsertInBatches(db, "did_stats_daily", daily, "did_id,day");
+  if (daily.length) await upsertInBatches(db, "vici_did_stats_daily", daily, "did_id,day");
 
   // 4. Recent call feed.
   if (feedRows.length) {
-    await upsertInBatches(db, "calls_recent", feedRows.map((r) => callFeedRow(r, cfg, idByE164)), "uniqueid");
+    await upsertInBatches(db, "vici_calls_recent", feedRows.map((r) => callFeedRow(r, cfg, idByE164)), "uniqueid");
   }
   // 4b. Attach recordings. They land a few minutes after the call, so re-read the whole
   // feed window rather than only what is new, and update the rows that now have audio.
@@ -155,7 +155,7 @@ export async function syncStats(db: SupabaseClient, pool: Pool, cfg: Config, sta
 
   // 5. Purge the feed hourly.
   if (now.getTime() - state.lastPurge > 3_600_000) {
-    await check("purge calls_recent", db.from("vici_calls_recent").delete().lt("call_date", windowStart.toISOString()));
+    await check("purge vici_calls_recent", db.from("vici_calls_recent").delete().lt("call_date", windowStart.toISOString()));
     state.lastPurge = now.getTime();
   }
 
