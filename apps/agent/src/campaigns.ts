@@ -61,7 +61,7 @@ export async function syncCampaigns(db: SupabaseClient, pool: Pool): Promise<num
   const campaigns = await fetchCampaigns(pool);
   if (campaigns.length === 0) return 0;
 
-  const { error } = await db.from("campaigns_live").upsert(
+  const { error } = await db.from("vici_campaigns_live").upsert(
     campaigns.map((c) => ({
       campaign_id: c.campaignId,
       active: c.active,
@@ -133,7 +133,7 @@ export async function syncCampaignDays(db: SupabaseClient, pool: Pool, days = 7)
   const rows = await fetchCampaignDays(pool, days);
   if (rows.length === 0) return 0;
 
-  const { error } = await db.from("campaign_stats_daily").upsert(
+  const { error } = await db.from("vici_campaign_stats_daily").upsert(
     rows.map((r) => ({
       campaign_id: r.campaignId,
       day: r.day,
@@ -173,7 +173,7 @@ export async function syncReferenceData(db: SupabaseClient, pool: Pool): Promise
 
   const now = new Date().toISOString();
   if (listRows.length) {
-    const { error } = await db.from("dialer_lists").upsert(
+    const { error } = await db.from("vici_lists").upsert(
       listRows.map((r) => ({
         list_id: Number(r.list_id),
         list_name: r.list_name ?? null,
@@ -188,7 +188,7 @@ export async function syncReferenceData(db: SupabaseClient, pool: Pool): Promise
   }
 
   if (userRows.length) {
-    const { error } = await db.from("dialer_users").upsert(
+    const { error } = await db.from("vici_users").upsert(
       userRows.map((r) => ({
         user_id: Number(r.user_id),
         user_name: String(r.user),
@@ -204,7 +204,7 @@ export async function syncReferenceData(db: SupabaseClient, pool: Pool): Promise
   }
 
   if (groupRows.length) {
-    const { error } = await db.from("dialer_user_groups").upsert(
+    const { error } = await db.from("vici_user_groups").upsert(
       groupRows.map((r) => ({
         user_group: String(r.user_group),
         group_name: r.group_name ?? null,

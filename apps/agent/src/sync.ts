@@ -3,7 +3,7 @@ import type { Pool } from "mysql2/promise";
 import { aggregateByCid, localDay, startOfLocalDay, type CallRow, type CidCounters } from "./aggregate";
 import { resolveCid } from "./cid";
 import type { Config } from "./config";
-import { fetchCalls, fetchLiveAgents, fetchRecordings, type LiveAgent } from "./vicidial";
+import { fetchCalls, fetchLiveAgents, fetchRecordings } from "./vicidial";
 
 const BATCH = 500;
 
@@ -20,22 +20,9 @@ async function upsertInBatches(db: SupabaseClient, table: string, rows: object[]
 }
 
 /** Heartbeat + replace the live agent snapshot. Runs every few seconds. */
-export async function syncLive(
-  db: SupabaseClient,
-  pool: Pool,
-  cfg: Config,
-  version: string,
-  /** The CRM's copy of this state, when a CRM project is configured. Failures are reported, never thrown. */
-  mirror?: { write: (agents: LiveAgent[], now: string) => Promise<string | null> } | null,
-  onMirrorProblem?: (message: string) => void,
-) {
+export async function syncLive(db: SupabaseClient, pool: Pool, cfg: Config, version: string) {
   const agents = await fetchLiveAgents(pool);
   const now = new Date().toISOString();
-
-  if (mirror) {
-    const problem = await mirror.write(agents, now);
-    if (problem && onMirrorProblem) onMirrorProblem(problem);
-  }
 
   if (agents.length > 0) {
     await upsertInBatches(
@@ -58,7 +45,7 @@ export async function syncLive(
 
   // Agents that logged out disappear from vicidial_live_agents; remove them from the snapshot.
   const present = agents.map((a) => a.user);
-  const del = db.from("agents_live").delete();
+  const del = db.from("vici_agents_live").delete();
   await check(
     "prune agents_live",
     present.length ? del.not("agent_user", "in", `(${present.map((u) => `"${u.replace(/"/g, "")}"`).join(",")})`) : del.neq("agent_user", ""),
@@ -66,7 +53,7 @@ export async function syncLive(
 
   await check(
     "heartbeat",
-    db.from("dialers").upsert(
+    db.from("vici_dialers").upsert(
       { name: cfg.dialerName, last_heartbeat_at: now, agent_version: version, status: "online" },
       { onConflict: "name" },
     ),
@@ -113,7 +100,7 @@ export async function syncStats(db: SupabaseClient, pool: Pool, cfg: Config, sta
     );
   }
 
-  const dids = await check<{ id: string; e164: string }[]>("load dids", db.from("dids").select("id, e164"));
+  const dids = await check<{ id: string; e164: string }[]>("load dids", db.from("vici_dids").select("id, e164"));
   const idByE164 = new Map(dids.map((d) => [d.e164, d.id]));
 
   // 2. Live counters for every DID (zeros for numbers with no calls today).
@@ -155,7 +142,7 @@ export async function syncStats(db: SupabaseClient, pool: Pool, cfg: Config, sta
   let recorded = 0;
   for (const r of recordings) {
     const { error } = await db
-      .from("calls_recent")
+      .from("vici_calls_recent")
       .update({ recording_sec: r.lengthSec, recording_file: r.filename, recording_url: r.location })
       .eq("uniqueid", r.uniqueid)
       // The URL only appears after the compress cron runs, minutes after the filename does,
@@ -168,7 +155,7 @@ export async function syncStats(db: SupabaseClient, pool: Pool, cfg: Config, sta
 
   // 5. Purge the feed hourly.
   if (now.getTime() - state.lastPurge > 3_600_000) {
-    await check("purge calls_recent", db.from("calls_recent").delete().lt("call_date", windowStart.toISOString()));
+    await check("purge calls_recent", db.from("vici_calls_recent").delete().lt("call_date", windowStart.toISOString()));
     state.lastPurge = now.getTime();
   }
 

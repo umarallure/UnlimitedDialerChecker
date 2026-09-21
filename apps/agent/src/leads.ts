@@ -69,7 +69,7 @@ export async function syncLeads(db: SupabaseClient, pool: Pool): Promise<{ leads
 
   for (let i = 0; i < leads.length; i += BATCH) {
     const { error } = await db
-      .from("dialer_leads")
+      .from("vici_leads")
       .upsert(leads.slice(i, i + BATCH).map((l) => ({ ...l, synced_at: now })), { onConflict: "lead_id" });
     if (error) throw new Error(`sync leads: ${error.message}`);
   }
@@ -79,7 +79,7 @@ export async function syncLeads(db: SupabaseClient, pool: Pool): Promise<{ leads
   let removed = 0;
   if (leads.length > 0) {
     const { data, error } = await db
-      .from("dialer_leads")
+      .from("vici_leads")
       .delete()
       .lt("synced_at", now)
       .select("lead_id");

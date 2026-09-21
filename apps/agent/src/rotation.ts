@@ -48,10 +48,10 @@ export type PoolSnapshot = { dids: DidRow[]; stats: DailyStat[]; policy: PolicyS
 /** Everything the engine needs, read from Supabase in one go. */
 export async function loadPool(db: SupabaseClient, now: Date): Promise<PoolSnapshot> {
   const [policyRes, didRes, statRes, labelRes] = await Promise.all([
-    db.from("policies").select("settings, enforcement_mode").eq("is_active", true).maybeSingle(),
-    db.from("dids").select("id, e164, lifecycle, lifecycle_since, warmup_week, manual_hold, daily_cap, hourly_cap, cap_override, fcr_registered_at, inbound_route_ok"),
-    db.from("did_stats_daily").select("did_id, day, calls, answered, short_call_pct, drops, sip_608").gte("day", dayCutoff(STATS_DAYS, now)),
-    db.from("reputation_checks").select("did_id, label, checked_at").order("checked_at", { ascending: false }),
+    db.from("vici_policies").select("settings, enforcement_mode").eq("is_active", true).maybeSingle(),
+    db.from("vici_dids").select("id, e164, lifecycle, lifecycle_since, warmup_week, manual_hold, daily_cap, hourly_cap, cap_override, fcr_registered_at, inbound_route_ok"),
+    db.from("vici_did_stats_daily").select("did_id, day, calls, answered, short_call_pct, drops, sip_608").gte("day", dayCutoff(STATS_DAYS, now)),
+    db.from("vici_reputation_checks").select("did_id, label, checked_at").order("checked_at", { ascending: false }),
   ]);
   if (didRes.error) throw new Error(`load dids: ${didRes.error.message}`);
 
@@ -182,11 +182,11 @@ async function applyProposal(db: SupabaseClient, p: Proposal, now: Date): Promis
     patch.lifecycle = p.toState;
     patch.lifecycle_since = now.toISOString();
   }
-  const { error } = await db.from("dids").update(patch).eq("id", p.didId);
+  const { error } = await db.from("vici_dids").update(patch).eq("id", p.didId);
   if (error) throw new Error(`apply ${p.e164}: ${error.message}`);
 
   if (p.toState) {
-    await db.from("did_state_events").insert({
+    await db.from("vici_did_state_events").insert({
       did_id: p.didId,
       from_state: p.fromState,
       to_state: p.toState,
@@ -208,19 +208,19 @@ export async function runRotation(db: SupabaseClient, pool: Pool, cfg: Config, n
   const enforcing = snapshot.mode === "enforce";
 
   const { data: run, error: runError } = await db
-    .from("lifecycle_runs")
+    .from("vici_lifecycle_runs")
     .insert({ mode: snapshot.mode, triggered_by: `agent:${cfg.dialerName}`, started_at: now.toISOString() })
     .select("id")
     .single();
   if (runError || !run) throw new Error(`start run: ${runError?.message ?? "no run row"}`);
 
   const fail = async (message: string) => {
-    await db.from("lifecycle_runs").update({ error: message, finished_at: new Date().toISOString() }).eq("id", run.id);
+    await db.from("vici_lifecycle_runs").update({ error: message, finished_at: new Date().toISOString() }).eq("id", run.id);
     throw new Error(message);
   };
 
   if (proposals.length) {
-    const { error } = await db.from("lifecycle_proposals").insert(
+    const { error } = await db.from("vici_lifecycle_proposals").insert(
       proposals.map((p) => ({
         run_id: run.id,
         did_id: p.didId,
@@ -252,7 +252,7 @@ export async function runRotation(db: SupabaseClient, pool: Pool, cfg: Config, n
       if (cfg.cidGroupId) {
         // Re-read the pool so the CID rows reflect the transitions just applied.
         const after = applied ? await loadPool(db, now) : snapshot;
-        const { data: live } = await db.from("did_stats_live").select("did_id, calls_today, calls_last_hour");
+        const { data: live } = await db.from("vici_did_stats_live").select("did_id, calls_today, calls_last_hour");
         const usage = new Map((live ?? []).map((l) => [l.did_id, { callsToday: l.calls_today ?? 0, callsLastHour: l.calls_last_hour ?? 0 }]));
         cidRows = await applyCidEntries(pool, cfg.cidGroupId, cidEntriesFor(after.dids, usage, after.policy, now));
       }
@@ -262,7 +262,7 @@ export async function runRotation(db: SupabaseClient, pool: Pool, cfg: Config, n
   }
 
   await db
-    .from("lifecycle_runs")
+    .from("vici_lifecycle_runs")
     .update({ dids_evaluated: evaluated, dids_skipped: skipped, proposals: proposals.length, applied, finished_at: new Date().toISOString() })
     .eq("id", run.id);
 

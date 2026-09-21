@@ -67,12 +67,12 @@ export async function syncCallStats(db: SupabaseClient, pool: Pool, days = 7): P
   // INCALL an hour ago is a SALE now — and an upsert alone would leave the earlier status
   // sitting there under its own key, counting the same call twice.
   const cutoff = rows.reduce((min, r) => (r.day < min ? r.day : min), rows[0].day);
-  const { error: cleared } = await db.from("campaign_call_stats").delete().gte("day", cutoff);
+  const { error: cleared } = await db.from("vici_campaign_call_stats").delete().gte("day", cutoff);
   if (cleared) throw new Error(`clear call stats: ${cleared.message}`);
 
   const now = new Date().toISOString();
   for (let i = 0; i < rows.length; i += CHUNK) {
-    const { error } = await db.from("campaign_call_stats").upsert(
+    const { error } = await db.from("vici_campaign_call_stats").upsert(
       rows.slice(i, i + CHUNK).map((r) => ({
         campaign_id: r.campaignId,
         day: r.day,
@@ -114,7 +114,7 @@ export async function syncCampaignStatuses(db: SupabaseClient, pool: Pool): Prom
   if (all.length === 0) return 0;
 
   const now = new Date().toISOString();
-  const { error } = await db.from("dialer_campaign_statuses").upsert(
+  const { error } = await db.from("vici_campaign_statuses").upsert(
     all.map((r) => ({
       campaign_id: String(r.campaign_id),
       status: String(r.status),

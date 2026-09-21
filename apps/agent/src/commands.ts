@@ -365,13 +365,13 @@ async function updateCampaign(cmd: CommandRow, api: VicidialApi, pool: Pool): Pr
 export async function processCommands(db: SupabaseClient, pool: Pool, cfg: Config, log: (msg: string) => void): Promise<number> {
   // Free anything a previous run claimed and never finished.
   await db
-    .from("commands")
+    .from("vici_commands")
     .update({ status: "queued", claimed_by: null })
     .eq("status", "running")
     .lt("started_at", new Date(Date.now() - STUCK_AFTER_MS).toISOString());
 
   const { data: queued, error } = await db
-    .from("commands")
+    .from("vici_commands")
     .select("id, type, payload, attempts, import_id")
     .eq("status", "queued")
     .order("created_at")
@@ -385,7 +385,7 @@ export async function processCommands(db: SupabaseClient, pool: Pool, cfg: Confi
   for (const row of queued) {
     // Claiming is a conditional update: if another worker got there first, this changes nothing.
     const { data: claimed } = await db
-      .from("commands")
+      .from("vici_commands")
       .update({ status: "running", started_at: new Date().toISOString(), attempts: row.attempts + 1, claimed_by: cfg.dialerName })
       .eq("id", row.id)
       .eq("status", "queued")
@@ -405,7 +405,7 @@ export async function processCommands(db: SupabaseClient, pool: Pool, cfg: Confi
     const retryable = !outcome.ok && outcome.retryable !== false && attempts < MAX_ATTEMPTS;
 
     await db
-      .from("commands")
+      .from("vici_commands")
       .update({
         status: outcome.ok ? "done" : retryable ? "queued" : "failed",
         result: outcome.result,
@@ -420,13 +420,13 @@ export async function processCommands(db: SupabaseClient, pool: Pool, cfg: Confi
     if (cmd.type === "create_agent" && !retryable && "password" in cmd.payload) {
       const { password, ...rest } = cmd.payload as { password?: string };
       void password;
-      await db.from("commands").update({ payload: rest }).eq("id", row.id);
+      await db.from("vici_commands").update({ payload: rest }).eq("id", row.id);
     }
 
     // Roll a finished chunk into its import, so the screen shows one job rather than many.
     if (cmd.import_id && !retryable) {
       const r = outcome.result as { added?: number; duplicates?: number; failed?: number };
-      const { error: rpcError } = await db.rpc("record_import_chunk", {
+      const { error: rpcError } = await db.rpc("vici_record_import_chunk", {
         p_import: cmd.import_id,
         p_added: r.added ?? 0,
         p_duplicates: r.duplicates ?? 0,

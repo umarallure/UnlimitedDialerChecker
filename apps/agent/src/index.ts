@@ -5,11 +5,10 @@ import { syncCallStats, syncCampaignStatuses } from "./call-stats";
 import { syncLeads } from "./leads";
 import { processCommands } from "./commands";
 import { runRotation } from "./rotation";
-import { createCrmMirror } from "./crm-mirror";
 import { syncLive, syncStats } from "./sync";
 import { createPool } from "./vicidial";
 
-const VERSION = "0.15.0";
+const VERSION = "0.16.0";
 
 function log(level: "info" | "error", msg: string, extra?: unknown) {
   const line = `${new Date().toISOString()} ${level.toUpperCase()} ${msg}`;
@@ -58,15 +57,11 @@ async function main() {
     `dialer-agent ${VERSION} starting: dialer=${cfg.dialerName} live=${cfg.liveIntervalMs}ms stats=${cfg.statsIntervalMs}ms cidOverride=${cfg.cidOverride ? "set" : "none"} api=${cfg.api ? "configured" : "none"}`,
   );
 
-  // The CRM keeps its own dialer screen; if it is configured, live state goes to both projects.
-  const crmMirror = createCrmMirror();
-  if (crmMirror) log("info", "crm mirror: configured");
-
   const statsState = { callsCursor: null as Date | null, lastPurge: 0 };
   let liveTicks = 0;
 
   const stopLive = loop("live", cfg.liveIntervalMs, async () => {
-    const n = await syncLive(db, pool, cfg, VERSION, crmMirror, (msg) => log("error", msg));
+    const n = await syncLive(db, pool, cfg, VERSION);
     // Log the live loop about once a minute (every tick when the interval is a minute or longer).
     const every = Math.max(1, Math.round(60_000 / cfg.liveIntervalMs));
     if (liveTicks++ % every === 0) return `${n} agent(s) logged in`;
@@ -101,7 +96,7 @@ async function main() {
     stopStats();
     stopRotation();
     stopCommands();
-    await db.from("dialers").update({ status: "stopped" }).eq("name", cfg.dialerName);
+    await db.from("vici_dialers").update({ status: "stopped" }).eq("name", cfg.dialerName);
     await pool.end();
     process.exit(0);
   };
