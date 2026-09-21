@@ -3,7 +3,7 @@ import type { Pool } from "mysql2/promise";
 import { aggregateByCid, localDay, startOfLocalDay, type CallRow, type CidCounters } from "./aggregate";
 import { resolveCid } from "./cid";
 import type { Config } from "./config";
-import { fetchCalls, fetchLiveAgents, fetchRecordings } from "./vicidial";
+import { fetchCalls, fetchLiveAgents, fetchRecordings, type LiveAgent } from "./vicidial";
 
 const BATCH = 500;
 
@@ -20,9 +20,22 @@ async function upsertInBatches(db: SupabaseClient, table: string, rows: object[]
 }
 
 /** Heartbeat + replace the live agent snapshot. Runs every few seconds. */
-export async function syncLive(db: SupabaseClient, pool: Pool, cfg: Config, version: string) {
+export async function syncLive(
+  db: SupabaseClient,
+  pool: Pool,
+  cfg: Config,
+  version: string,
+  /** The CRM's copy of this state, when a CRM project is configured. Failures are reported, never thrown. */
+  mirror?: { write: (agents: LiveAgent[], now: string) => Promise<string | null> } | null,
+  onMirrorProblem?: (message: string) => void,
+) {
   const agents = await fetchLiveAgents(pool);
   const now = new Date().toISOString();
+
+  if (mirror) {
+    const problem = await mirror.write(agents, now);
+    if (problem && onMirrorProblem) onMirrorProblem(problem);
+  }
 
   if (agents.length > 0) {
     await upsertInBatches(
