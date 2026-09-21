@@ -16,7 +16,10 @@ import { ChevronDown, ChevronUp } from "lucide-react";
  * screen thinks is happening is worth more than the tidiness of hiding it completely.
  */
 export function AgentFrame() {
-  const [open, setOpen] = useState(false);
+  // Open to begin with. The webphone cannot start audio without a click inside its own frame —
+  // browsers require a gesture in that document, and our page cannot supply one on its behalf.
+  // Once the agent has answered the session call, they can collapse it and forget it exists.
+  const [open, setOpen] = useState(true);
 
   return (
     <section className="shrink-0 border-t border-line bg-surface-alt">
@@ -26,7 +29,7 @@ export function AgentFrame() {
         className="flex min-h-11 w-full items-center justify-between px-6 text-legal text-muted hover:text-ink"
         aria-expanded={open}
       >
-        <span>VICIdial session {open ? "" : "— running"}</span>
+        <span>{open ? "VICIdial session — answer the call here once, then collapse this" : "VICIdial session — running"}</span>
         {open ? <ChevronDown aria-hidden className="size-4" /> : <ChevronUp aria-hidden className="size-4" />}
       </button>
 

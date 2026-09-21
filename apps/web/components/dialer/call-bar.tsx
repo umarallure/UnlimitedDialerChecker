@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PhoneOff, PhoneOutgoing } from "lucide-react";
+import { PhoneCall, PhoneOff, PhoneOutgoing } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 
@@ -180,6 +180,23 @@ export function CallBar({ dispositions }: { dispositions: Disposition[] }) {
             className="inline-flex min-h-11 items-center rounded-full border border-line bg-surface px-5 text-button text-ink hover:border-line-strong disabled:opacity-60"
           >
             {paused ? "Go ready" : "Pause"}
+          </button>
+          {/*
+            VICIdial rings the agent's phone at login and keeps it in a conference for the shift.
+            If that leg never answers or drops, calls still arrive and nobody can hear anyone —
+            so the cure is one button, not a support call.
+          */}
+          <button
+            type="button"
+            disabled={busy || stale}
+            onClick={async () => {
+              if (await send("call_agent", { value: "CALL" })) {
+                toast.success("Ringing your phone", { description: "Answer it in the dialer session below to get your audio back." });
+              }
+            }}
+            className="inline-flex min-h-11 items-center gap-2 rounded-full border border-line bg-surface px-5 text-button text-ink hover:border-line-strong disabled:opacity-60"
+          >
+            <PhoneCall aria-hidden className="size-4" /> Reconnect audio
           </button>
           <button
             type="button"

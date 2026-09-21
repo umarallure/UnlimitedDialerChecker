@@ -38,16 +38,18 @@ describe("isAgentFunction", () => {
 
   it("refuses anything else, including real VICIdial functions we did not allow", () => {
     // These exist in the Agent API. Not being in our list is the point.
-    expect(isAgentFunction("call_agent")).toBe(false);
+    expect(isAgentFunction("ra_call_control")).toBe(false);
     expect(isAgentFunction("send_notification")).toBe(false);
     expect(isAgentFunction("")).toBe(false);
     expect(isAgentFunction(null)).toBe(false);
     expect(isAgentFunction(["external_hangup"])).toBe(false);
   });
 
-  it("has no function that could log another agent out or dial on their behalf by name", () => {
-    // agent_user is resolved from the session, but keep the surface small regardless.
-    expect(AGENT_FUNCTIONS).not.toContain("call_agent");
+  it("allows reconnecting the agent's own audio, but not reaching across to other agents", () => {
+    // call_agent re-rings the session's own agent and nobody else, which is what a dropped audio
+    // leg needs. ra_call_control acts on remote agents by name, so it stays out.
+    expect(AGENT_FUNCTIONS).toContain("call_agent");
     expect(AGENT_FUNCTIONS).not.toContain("ra_call_control");
+    expect(AGENT_FUNCTIONS).not.toContain("send_notification");
   });
 });

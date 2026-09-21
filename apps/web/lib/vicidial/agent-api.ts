@@ -28,6 +28,8 @@ export const AGENT_FUNCTIONS = [
   "send_dtmf",
   "pause_code",
   "calls_in_queue_count",
+  /** Re-rings the agent's own phone to rejoin their session. The cure for a dropped audio leg. */
+  "call_agent",
   "logout",
 ] as const;
 
