@@ -1,55 +1,145 @@
 "use client";
-import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 
 /**
- * The VICIdial agent screen, running underneath ours.
+ * The VICIdial session, which carries the agent's audio.
  *
  * It cannot be removed — it registers the agent, receives predictive calls from the server and
- * hosts the webphone that carries the audio. What it can be is out of the way.
+ * hosts the webphone. What it can be is out of the way.
  *
- * It is never `display:none` and never zero-sized: a hidden iframe gets its timers throttled by
- * the browser, and VICIdial's agent screen is a polling loop. So it stays laid out and visible at
- * one pixel of height when collapsed, which keeps it running at full speed.
+ * **Embedded or in its own window.** Embedded is tidier and works for everything except, on some
+ * browsers, the one thing that matters: the webphone registers but will not answer the call that
+ * puts the agent into their conference, and every call is then silent at both ends. The same
+ * screen in its own window answers immediately. The difference is a browser's rules about audio
+ * and microphones in a third-party frame, which is not ours to overrule — so the choice is
+ * offered rather than assumed, and remembered per browser.
  *
- * The expand control stays in for now. While this is new, being able to see what the real agent
- * screen thinks is happening is worth more than the tidiness of hiding it completely.
+ * Either way the agent works in *our* screen. This is the phone, not the workplace.
  */
+
+const FRAME_ID = "vicidial-session";
+const WINDOW_NAME = "vicidial_session";
+const STORAGE_KEY = "udc.dialer.session-window";
+
 export function AgentFrame() {
-  // Open to begin with. The webphone cannot start audio without a click inside its own frame —
-  // browsers require a gesture in that document, and our page cannot supply one on its behalf.
-  // Once the agent has answered the session call, they can collapse it and forget it exists.
   const [open, setOpen] = useState(true);
+  const [windowed, setWindowed] = useState(false);
+  const [windowLost, setWindowLost] = useState(false);
+  const winRef = useRef<Window | null>(null);
+
+  // Remembered per browser: an agent who needs the window needs it every shift. Read after the
+  // first paint so the server and client agree on what to render to begin with.
+  useEffect(() => {
+    const remembered = (() => {
+      try {
+        return localStorage.getItem(STORAGE_KEY) === "1";
+      } catch {
+        // Private browsing, blocked storage: the default is simply the embedded one.
+        return false;
+      }
+    })();
+    if (remembered) queueMicrotask(() => setWindowed(true));
+  }, []);
+
+  const openWindow = useCallback(() => {
+    const win = window.open("/api/agent/frame", WINDOW_NAME, "width=1120,height=760,noopener=no");
+    if (!win) {
+      setWindowLost(true);
+      return;
+    }
+    winRef.current = win;
+    win.focus();
+    setWindowed(true);
+    setWindowLost(false);
+    try {
+      localStorage.setItem(STORAGE_KEY, "1");
+    } catch {}
+  }, []);
+
+  const useEmbedded = useCallback(() => {
+    winRef.current?.close();
+    winRef.current = null;
+    setWindowed(false);
+    setWindowLost(false);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {}
+  }, []);
+
+  // A closed window means no audio, which is worth saying out loud rather than leaving an agent
+  // to discover it on the next call.
+  useEffect(() => {
+    if (!windowed) return;
+    const timer = setInterval(() => setWindowLost(Boolean(winRef.current?.closed)), 2000);
+    return () => clearInterval(timer);
+  }, [windowed]);
 
   return (
     <section className="shrink-0 border-t border-line bg-surface-alt">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex min-h-11 w-full items-center justify-between px-6 text-legal text-muted hover:text-ink"
-        aria-expanded={open}
-      >
-        <span>{open ? "VICIdial session — answer the call here once, then collapse this" : "VICIdial session — running"}</span>
-        {open ? <ChevronDown aria-hidden className="size-4" /> : <ChevronUp aria-hidden className="size-4" />}
-      </button>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-6">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex min-h-11 items-center gap-2 text-legal text-muted hover:text-ink"
+          aria-expanded={open}
+        >
+          <span>
+            {windowed
+              ? "Dialer session — in its own window"
+              : open
+                ? "Dialer session — answer the call here once, then collapse this"
+                : "Dialer session — running"}
+          </span>
+          {open ? <ChevronDown aria-hidden className="size-4" /> : <ChevronUp aria-hidden className="size-4" />}
+        </button>
 
-      <iframe
-        id="vicidial-session"
-        title="VICIdial agent session"
-        src="/api/agent/frame"
-        /*
-         * The microphone is the point: the webphone is WebRTC and lives two frames down — this
-         * one holds the agent screen, which holds CyburPhone. Permissions only travel as far as
-         * each container allows, so anything withheld here is withheld from the phone.
-         *
-         * The origins are wildcarded to match what VICIdial's own nested frame asks for
-         * (`microphone *`). Narrowing to the default 'src' would rely on the two frames staying
-         * same-origin, which is VICIdial's business to change, not ours.
-         */
-        allow="microphone *; autoplay *; speaker-selection *"
-        className="w-full border-0 bg-surface"
-        style={{ height: open ? 620 : 1 }}
-      />
+        <div className="flex items-center gap-3">
+          {windowed ? (
+            <>
+              <button type="button" onClick={openWindow} className="min-h-11 text-legal text-graphite underline hover:text-ink">
+                Reopen the window
+              </button>
+              <button type="button" onClick={useEmbedded} className="min-h-11 text-legal text-muted underline hover:text-ink">
+                Put it back on the page
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={openWindow}
+              className="inline-flex min-h-11 items-center gap-2 text-legal text-graphite underline hover:text-ink"
+            >
+              <ExternalLink aria-hidden className="size-3.5" />
+              No audio? Open the phone in its own window
+            </button>
+          )}
+        </div>
+      </div>
+
+      {windowLost && (
+        <p className="mx-6 mb-3 rounded-md border border-warning/20 bg-warning/10 px-4 py-3 text-caption text-warning">
+          The dialer session window is closed, so calls have no audio. Reopen it, then use{" "}
+          <strong>Reconnect audio</strong>.
+        </p>
+      )}
+
+      {!windowed && (
+        <iframe
+          id={FRAME_ID}
+          title="VICIdial agent session"
+          src="/api/agent/frame"
+          /*
+           * The microphone is the point: the webphone is WebRTC and lives two frames down — this
+           * one holds the agent screen, which holds CyburPhone. Permissions only travel as far as
+           * each container allows, so anything withheld here is withheld from the phone. The
+           * origins are wildcarded to match what VICIdial's own nested frame asks for.
+           */
+          allow="microphone *; autoplay *; speaker-selection *"
+          className="w-full border-0 bg-surface"
+          style={{ height: open ? 620 : 1 }}
+        />
+      )}
     </section>
   );
 }

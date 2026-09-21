@@ -107,14 +107,18 @@ export function AudioCheck() {
     };
     tick();
 
+    const wasNew = state !== "ready";
     setState("ready");
     setDetail(stream.getAudioTracks()[0]?.label || "Microphone open");
 
-    // The webphone asks for the microphone once, as it loads. If this was the grant that
-    // unblocked it, it has to start again to notice.
-    const frame = document.getElementById(FRAME_ID) as HTMLIFrameElement | null;
-    if (frame) frame.src = frame.src;
-  }, [stop]);
+    // The webphone asks for the microphone once, as it loads, so a *new* grant only reaches it
+    // after a restart. Restarting when the microphone was already granted would be worse than
+    // useless: it logs the agent out of VICIdial and back in, mid-shift, for nothing.
+    if (wasNew) {
+      const frame = document.getElementById(FRAME_ID) as HTMLIFrameElement | null;
+      if (frame) frame.src = frame.src;
+    }
+  }, [stop, state]);
 
   const playTone = useCallback(async () => {
     const ctx = ctxRef.current ?? new AudioContext();
