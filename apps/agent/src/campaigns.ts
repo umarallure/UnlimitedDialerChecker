@@ -20,6 +20,8 @@ export type LiveCampaign = {
   dropCallSeconds: number;
   hopperLevel: number;
   availableOnlyTally: boolean;
+  /** Space-delimited, padded with '-'. Without it nothing can tell a live lead from a finished one. */
+  dialStatuses: string | null;
   agentsLoggedIn: number;
   leadsInHopper: number;
   serverTrunks: number | null;
@@ -34,7 +36,7 @@ export async function fetchCampaigns(pool: Pool): Promise<LiveCampaign[]> {
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT c.campaign_id, c.active, c.dial_method, c.auto_dial_level, c.adaptive_maximum_level,
             c.adaptive_dropped_percentage, c.dial_timeout, c.drop_call_seconds, c.hopper_level,
-            c.available_only_ratio_tally,
+            c.available_only_ratio_tally, c.dial_statuses,
             (SELECT COUNT(*) FROM vicidial_live_agents la WHERE la.campaign_id = c.campaign_id) AS agents_logged_in,
             (SELECT COUNT(*) FROM vicidial_hopper h WHERE h.campaign_id = c.campaign_id) AS leads_in_hopper
        FROM vicidial_campaigns c`,
@@ -51,6 +53,7 @@ export async function fetchCampaigns(pool: Pool): Promise<LiveCampaign[]> {
     dropCallSeconds: Number(r.drop_call_seconds),
     hopperLevel: Number(r.hopper_level),
     availableOnlyTally: r.available_only_ratio_tally === "Y",
+    dialStatuses: r.dial_statuses === null || r.dial_statuses === undefined ? null : String(r.dial_statuses),
     agentsLoggedIn: Number(r.agents_logged_in ?? 0),
     leadsInHopper: Number(r.leads_in_hopper ?? 0),
     serverTrunks: trunks,
@@ -73,6 +76,7 @@ export async function syncCampaigns(db: SupabaseClient, pool: Pool): Promise<num
       drop_call_seconds: c.dropCallSeconds,
       hopper_level: c.hopperLevel,
       available_only_tally: c.availableOnlyTally,
+      dial_statuses: c.dialStatuses,
       agents_logged_in: c.agentsLoggedIn,
       leads_in_hopper: c.leadsInHopper,
       server_trunks: c.serverTrunks,
