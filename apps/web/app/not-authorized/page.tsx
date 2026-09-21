@@ -1,7 +1,18 @@
+import { redirect } from "next/navigation";
 import { AuthShell } from "@/components/auth-shell";
 import { SecondaryButton } from "@/components/ui";
+import { createClient } from "@/lib/supabase/server";
 
-export default function NotAuthorizedPage() {
+/**
+ * The dead end for an account with no access — but an agent is not one of those. They reach here
+ * by a stale link or a bookmark from before they were given dialer access, and the page they
+ * actually want is one redirect away.
+ */
+export default async function NotAuthorizedPage() {
+  const supabase = await createClient();
+  const { data: isAgent } = await supabase.rpc("is_listed_agent");
+  if (isAgent) redirect("/dialer");
+
   return (
     <AuthShell
       title="No admin access"

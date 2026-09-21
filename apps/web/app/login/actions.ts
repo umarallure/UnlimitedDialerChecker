@@ -21,5 +21,12 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
   const { error } = await supabase.auth.signInWithPassword(parsed.data);
   if (error) return { error: "Email or password is incorrect." };
 
-  redirect("/mfa");
+  // Where someone lands depends on what they are. Admins go on to the second factor, which is
+  // required for every admin session; agents go to their dialer screen, which carries no MFA
+  // requirement because an agent can only work the leads already assigned to them.
+  const { data: isAdmin } = await supabase.rpc("is_listed_admin");
+  if (isAdmin) redirect("/mfa");
+
+  const { data: isAgent } = await supabase.rpc("is_listed_agent");
+  redirect(isAgent ? "/dialer" : "/not-authorized");
 }

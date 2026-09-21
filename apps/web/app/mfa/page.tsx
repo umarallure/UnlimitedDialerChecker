@@ -8,7 +8,11 @@ export default async function MfaPage() {
   const { data } = await supabase.auth.getClaims();
   if (!data?.claims?.sub) redirect("/login");
   const { data: listed } = await supabase.rpc("is_listed_admin");
-  if (!listed) redirect("/not-authorized");
+  if (!listed) {
+    // An agent who reaches this page (a stale link, a bookmark) belongs on their own screen.
+    const { data: isAgent } = await supabase.rpc("is_listed_agent");
+    redirect(isAgent ? "/dialer" : "/not-authorized");
+  }
 
   return (
     <AuthShell title="Two-factor verification" description="An authenticator code is required for every admin session.">
