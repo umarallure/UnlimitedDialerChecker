@@ -41,7 +41,20 @@ const STATUS_LABEL: Record<string, string> = {
   PAUSE: "Paused",
 };
 
-function tone(status: string | null): string {
+/**
+ * What to call the state the agent is in.
+ *
+ * VICIdial parks an agent in PAUSED once a call ends and they still owe it an outcome — the same
+ * status as an agent taking a breather between calls. Saying "Paused" at that moment is wrong at
+ * exactly the point the agent needs prompting, so a lead still attached tells the two apart.
+ */
+function label(status: string | null, leadId: number | null): string {
+  if ((status === "PAUSED" || status === "PAUSE") && leadId) return "Choose an outcome";
+  return STATUS_LABEL[status ?? ""] ?? status ?? "Signing in…";
+}
+
+function tone(status: string | null, leadId: number | null = null): string {
+  if ((status === "PAUSED" || status === "PAUSE") && leadId) return "bg-soft-orange text-primary-pressed border-primary/20";
   if (status === "INCALL" || status === "QUEUE") return "bg-success/10 text-success border-success/20";
   if (status === "DISPO") return "bg-soft-orange text-primary-pressed border-primary/20";
   if (status === "READY" || status === "CLOSER") return "bg-surface-alt text-graphite border-line";
@@ -151,8 +164,8 @@ export function CallBar({ dispositions }: { dispositions: Disposition[] }) {
     <div className="flex flex-col gap-5">
       <section className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-line bg-surface p-6">
         <div className="flex items-center gap-4">
-          <span className={`inline-flex min-h-11 items-center rounded-full border px-4 text-button ${tone(status)}`}>
-            {stale ? "Not connected" : (STATUS_LABEL[status ?? ""] ?? status ?? "Signing in…")}
+          <span className={`inline-flex min-h-11 items-center rounded-full border px-4 text-button ${tone(status, live?.lead_id ?? null)}`}>
+            {stale ? "Not connected" : label(status, live?.lead_id ?? null)}
           </span>
           {!stale && status && <span className="text-title-md tabular-nums text-ink">{elapsed(live?.state_since ?? null, now)}</span>}
           {live?.pause_code && <span className="text-caption text-muted">{live.pause_code}</span>}
